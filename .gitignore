@@ -1,0 +1,51 @@
+# OS / Editor
+.DS_Store
+Thumbs.db
+*.swp
+.idea/
+.vscode/
+*.iml
+
+# Logs
+logs/
+*.log
+npm-debug.log*
+yarn-*.log*
+pnpm-debug.log*
+
+# Env & secrets
+.env
+.env.*
+*.local
+
+# Node
+node_modules/
+
+# Build outputs
+dist/
+build/
+.out/
+out/
+.next/
+.vite/
+.cache/
+.parcel-cache/
+.sass-cache/
+.tmp/
+temp/
+
+# Testing / coverage
+coverage/
+.nyc_output/
+jest-html-reporters-*
+junit.xml
+
+# TypeScript
+*.tsbuildinfo
+
+# Tool caches
+.eslintcache
+.stylelintcache
+
+# Dev uploads
+uploads/
