@@ -1,2 +1,2 @@
-# POOSD-Project
+# Toki
 #
