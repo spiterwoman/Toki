@@ -7,7 +7,7 @@ export default function LoginPage(){
   const nav = useNavigate();
   const onSubmit = (e: React.FormEvent) => {
     e.preventDefault();
-    nav("/tasks");
+    nav("/verify");
   };
 
   return (
@@ -22,7 +22,7 @@ export default function LoginPage(){
 
             <label className="label" htmlFor="pw" style={{ marginTop: 6 }}>Password</label>
             <input id="pw" className="input" type="password" placeholder="••••••••" required />
-
+            
             <button className="btn" type="submit" style={{ marginTop: 14, width:"100%" }}>Log In</button>
           </form>
           <div style={{ textAlign:"center", fontSize:".9rem", color:"var(--muted)" }}>

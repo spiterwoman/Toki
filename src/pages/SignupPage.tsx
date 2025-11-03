@@ -8,7 +8,7 @@ export default function SignupPage() {
   const onSubmit = (e: React.FormEvent) => {
     e.preventDefault();
     // TODO: Hook up to real auth later
-    nav("/tasks");
+    nav("/verify");
   };
 
   return (

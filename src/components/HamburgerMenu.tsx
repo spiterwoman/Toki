@@ -4,12 +4,12 @@ import GlassCard from "./GlassCard";
 type Props = { open: boolean; onClose: () => void };
 
 const items = [
-  { label: "Daily Summary", to: "/" },
+  { label: "Daily Summary", to: "/daily-summary" },
   { label: "Calendar", to: "/calendar" },
   { label: "Tasks", to: "/tasks" },
   { label: "Reminders", to: "/reminders" },
-  { label: "Weather", to: "/" },
-  { label: "NASA Photo", to: "/" },
+  { label: "Weather", to: "/weather" },
+  { label: "NASA Photo", to: "/nasa-photo" },
   { label: "UCF Parking", to: "/parking" },
 ];
 
