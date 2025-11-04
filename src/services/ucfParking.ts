@@ -5,7 +5,9 @@ import type { Garage } from "../types";
 // In local dev, Vite proxies /api/ucf-parking to the upstream JSON endpoint.
 
 export async function fetchUcfParking(): Promise<Garage[]> {
-  const res = await fetch("/api/ucf-parking", {
+  const apiBase = (import.meta as any).env?.VITE_API_BASE || ""; // e.g. https://toki-frontend-gamma.vercel.app
+  const url = apiBase ? `${apiBase.replace(/\/$/, "")}/api/ucf-parking` : "/api/ucf-parking";
+  const res = await fetch(url, {
     headers: { accept: "application/json" },
   });
   if (!res.ok) {
