@@ -185,17 +185,29 @@ const TTL_MS = 60_000; // 60s cache
 
 export const config = { runtime: "edge" };
 
+const CORS_HEADERS: Record<string, string> = {
+  "Access-Control-Allow-Origin": "*",
+  "Access-Control-Allow-Methods": "GET, OPTIONS",
+  "Access-Control-Allow-Headers": "Content-Type, Authorization",
+  "Access-Control-Max-Age": "600",
+  Vary: "Origin",
+};
+
 export default async function handler(req: Request): Promise<Response> {
   const url = new URL(req.url);
   if (url.pathname !== "/api/ucf-parking") {
-    return new Response("Not found", { status: 404 });
+    return new Response("Not found", { status: 404, headers: CORS_HEADERS });
+  }
+
+  if (req.method === "OPTIONS") {
+    return new Response(null, { status: 204, headers: CORS_HEADERS });
   }
 
   const now = Date.now();
   if (cache && now - cache.ts < TTL_MS) {
     return new Response(JSON.stringify(cache.data), {
       status: 200,
-      headers: { "content-type": "application/json; charset=utf-8", "cache-control": "s-maxage=30, max-age=0" },
+      headers: { ...CORS_HEADERS, "content-type": "application/json; charset=utf-8", "cache-control": "s-maxage=30, max-age=0" },
     });
   }
 
@@ -209,12 +221,12 @@ export default async function handler(req: Request): Promise<Response> {
       if (debug === "json") {
         return new Response(JSON.stringify({ source: jsonHit.url, raw: jsonHit.data }, null, 2), {
           status: 200,
-          headers: { "content-type": "application/json; charset=utf-8" },
+          headers: { ...CORS_HEADERS, "content-type": "application/json; charset=utf-8" },
         });
       }
       return new Response(JSON.stringify(parsed), {
         status: 200,
-        headers: { "content-type": "application/json; charset=utf-8", "cache-control": "s-maxage=30, max-age=0" },
+        headers: { ...CORS_HEADERS, "content-type": "application/json; charset=utf-8", "cache-control": "s-maxage=30, max-age=0" },
       });
     }
   }
@@ -229,7 +241,7 @@ export default async function handler(req: Request): Promise<Response> {
   if (!upstream.ok) {
     return new Response(JSON.stringify({ error: `Upstream error: ${upstream.status}` }), {
       status: 502,
-      headers: { "content-type": "application/json; charset=utf-8" },
+      headers: { ...CORS_HEADERS, "content-type": "application/json; charset=utf-8" },
     });
   }
 
@@ -245,10 +257,10 @@ export default async function handler(req: Request): Promise<Response> {
   // Debug modes to help inspect upstream content in production
   const debug = (url.searchParams.get("debug") || "").toLowerCase();
   if (debug === "raw") {
-    return new Response(html, { status: 200, headers: { "content-type": "text/html; charset=utf-8" } });
+    return new Response(html, { status: 200, headers: { ...CORS_HEADERS, "content-type": "text/html; charset=utf-8" } });
   }
   if (debug === "text") {
-    return new Response(text, { status: 200, headers: { "content-type": "text/plain; charset=utf-8" } });
+    return new Response(text, { status: 200, headers: { ...CORS_HEADERS, "content-type": "text/plain; charset=utf-8" } });
   }
 
   const data = parseFromText(text);
@@ -256,6 +268,6 @@ export default async function handler(req: Request): Promise<Response> {
 
   return new Response(JSON.stringify(data), {
     status: 200,
-    headers: { "content-type": "application/json; charset=utf-8", "cache-control": "s-maxage=30, max-age=0" },
+    headers: { ...CORS_HEADERS, "content-type": "application/json; charset=utf-8", "cache-control": "s-maxage=30, max-age=0" },
   });
 }

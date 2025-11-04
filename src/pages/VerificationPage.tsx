@@ -1,4 +1,4 @@
-import React, { useState } from "react";
+import { useState } from "react";
 import { Mail } from "lucide-react";
 import GlassCard from "../components/GlassCard";
 import PageShell from "../components/PageShell";

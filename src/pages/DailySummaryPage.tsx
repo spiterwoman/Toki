@@ -46,7 +46,7 @@ export default function DailySummaryPage() {
     return () => window.removeEventListener('resize', checkScreenSize);
   }, []);
 
-  function toggleTask(id) {
+  function toggleTask(id: number) {
     setTasks((prev) => prev.map((t) => (t.id === id ? { ...t, completed: !t.completed } : t)));
   }
 
