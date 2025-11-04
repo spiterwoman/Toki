@@ -1,6 +1,7 @@
 require('express');
 require('mongodb');
 var token = require('./createJWT.js');
+require('dotenv').config(); // loads .env by default
 const { ObjectId } = require('mongodb');
 const puppeteer = require('puppeteer');
 
@@ -639,3 +640,4 @@ function sendVerEmail(email, verificationToken)
 
 
         
+
