@@ -1,4 +1,4 @@
-import React, { useState } from "react";
+import React, { useState, useEffect, useRef } from "react";
 import { Mail } from "lucide-react";
 import GlassCard from "../components/GlassCard";
 import PageShell from "../components/PageShell";
@@ -11,10 +11,25 @@ interface VerificationPageProps {
 
 export default function VerificationPage({ onVerify }: VerificationPageProps) {
   const [otp, setOtp] = useState('');
+  const otpRef = useRef<HTMLInputElement>(null);
+
+  useEffect(() => {
+    // Focus the OTP input on mount
+    if (otpRef.current) {
+      otpRef.current.focus();
+    }
+  }, []);
 
   const handleVerify = () => {
     if (otp.length === 6) {
-      onVerify();
+      const success = onVerify();
+      
+      // If verification failed, refocus the input
+      if(!success){
+        otpRef.current?.focus();
+      }
+    } else {
+      otpRef.current?.focus();
     }
   };
 
@@ -46,7 +61,12 @@ export default function VerificationPage({ onVerify }: VerificationPageProps) {
           </div>
 
           {/* OTP Input */}
-          <InputOTP maxLength={6} value={otp} onChange={(val) => setOtp(val.replace(/\D/g, ""))}>
+          <InputOTP 
+            ref={otpRef}
+            maxLength={6} 
+            value={otp} 
+            onChange={(val) => setOtp(val.replace(/\D/g, ""))}
+          >
             <InputOTPGroup style={{ display: "flex", justifyContent: "center", gap: "8px" }}>
                 {Array.from({ length: 6 }).map((_, index) => (
                 <InputOTPSlot
@@ -95,4 +115,4 @@ export default function VerificationPage({ onVerify }: VerificationPageProps) {
       </div>
     </PageShell>
   );
-  }
+}
