@@ -1,45 +1,93 @@
 import type { Garage } from "../types";
 
-// Simplified client: always fetch JSON from our API.
-// In production, this is the Vercel serverless function at /api/ucf-parking.
-// In local dev, Vite proxies /api/ucf-parking to the upstream JSON endpoint.
+// scrapes UCF Parking availability page (via dev proxy) and extracts garage data.
+// In dev, it fetches from `/proxy/ucf-parking` which the Vite proxy forwards to
+// https://parking.ucf.edu/resources/garage-availability/
+
+//
+const GARAGE_IDS = ["a", "b", "c", "d", "h", "i"] as const;
+type GarageId = typeof GARAGE_IDS[number];
+
+// classifying garage status based on availability percentage
+function statusFromPercent(pct: number): Garage["status"] {
+  if (pct <= 0) return "Full";
+  if (pct <= 15) return "Limited";
+  return "Available";
+}
+
+function makeGarage(id: GarageId, name: string, available: number, capacity: number): Garage {
+  const pct = Math.max(0, Math.min(100, Math.round((available / Math.max(1, capacity)) * 100)));
+  return {
+    id,
+    name,
+    available,
+    capacity,
+    status: statusFromPercent(pct),
+  };
+}
+
+// extract garage data from the page's text using regex patterns.
+function parseFromInnerText(text: string): Garage[] {
+  const garages: Partial<Record<GarageId, Garage>> = {};
+  const lines = text
+    .split(/\r?\n/)
+    .map((l) => l.trim())
+    .filter(Boolean);
+
+  const patterns: RegExp[] = [
+    /Garage\s+([A-Z])\s*:?\s*(\d{1,4})\s*(?:of|\/|out of)\s*(\d{1,4})/i,
+    /Garage\s+([A-Z])[^\d]*?(?:Available\s*:?\s*)?(\d{1,4})[^\d]*(?:Total|Capacity)?\s*:?\s*(\d{1,4})/i,
+  ];
+
+  for (const line of lines) {
+    for (const re of patterns) {
+      const m = line.match(re);
+      if (m) {
+        const letter = (m[1] || "").toLowerCase();
+        if ((GARAGE_IDS as readonly string[]).includes(letter)) {
+          const id = letter as GarageId;
+          const available = parseInt(m[2], 10);
+          const capacity = parseInt(m[3], 10);
+          const name = `Garage ${letter.toUpperCase()}`;
+          garages[id] = makeGarage(id, name, isNaN(available) ? 0 : available, isNaN(capacity) ? 0 : capacity);
+        }
+      }
+    }
+  }
+
+  return GARAGE_IDS.map((id) =>
+    garages[id] ?? makeGarage(id, `Garage ${id.toUpperCase()}`, 0, 0)
+  );
+}
 
 export async function fetchUcfParking(): Promise<Garage[]> {
-  const env = (import.meta as any).env as { VITE_API_BASE?: string; PROD?: boolean };
-  // Fallback: if no env is provided in a production build, default to the Vercel API base
-  const apiBase = (env?.VITE_API_BASE && String(env.VITE_API_BASE))
-    || (env?.PROD ? "https://toki-frontend-gamma.vercel.app" : "");
-  const url = apiBase ? `${apiBase.replace(/\/$/, "")}/api/ucf-parking` : "/api/ucf-parking";
-  const res = await fetch(url, {
-    headers: { accept: "application/json" },
-  });
-  if (!res.ok) {
-    throw new Error(`UCF parking fetch failed: ${res.status}`);
+  // tries API endpoint first (production serverless). In dev this is proxied to HTML.
+  let res: Response | null = null;
+  try {
+    res = await fetch("/api/ucf-parking", { headers: { accept: "application/json, text/html;q=0.8,*/*;q=0.1" } });
+  } catch (e) {
   }
-  const raw = await res.json();
 
-  // Normalize shape: accept either our API's Garage[] or the upstream UCF raw array
-  // Example raw item: { location: { name: 'Garage A', counts: { available, total, occupied } } }
-  const normalize = (input: any): Garage[] => {
-    if (Array.isArray(input) && input.length && input[0] && input[0].location) {
-      const out: Garage[] = [];
-      for (const item of input) {
-        const loc = item.location || {};
-        const counts = loc.counts || {};
-        const name: string = (loc.name || counts.location_name || "").toString();
-        const match = name.match(/Garage\s+([A-Z])\b/i);
-        if (!match) continue;
-        const id = match[1].toLowerCase();
-        const available = Number(counts.available ?? Math.max(0, (counts.total ?? 0) - (counts.occupied ?? 0)) ?? 0);
-        const capacity = Number(counts.total ?? 0);
-        const pct = capacity > 0 ? Math.round(((capacity - available) / capacity) * 100) : 0; // percent full
-        const status: Garage["status"] = available <= 0 ? "Full" : pct <= 15 ? "Limited" : "Available";
-        out.push({ id, name, available, capacity, status });
-      }
-      return out;
+  if (res && res.ok) {
+    const ct = res.headers.get("content-type") || "";
+    if (ct.includes("application/json")) {
+      const data = (await res.json()) as Garage[];
+      return data;
     }
-    return input as Garage[];
-  };
+    // if HTML, fall through to HTML parsing using the received body
+    const html = await res.text();
+    const doc = new DOMParser().parseFromString(html, "text/html");
+    const text = doc?.body?.innerText || html;
+    return parseFromInnerText(text);
+  }
 
-  return normalize(raw);
+  // fallback: use dev-only proxy path and parse HTML
+  const res2 = await fetch("/proxy/ucf-parking", {
+    headers: { accept: "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8" },
+  });
+  if (!res2.ok) throw new Error(`UCF parking fetch failed: ${res2?.status ?? "no response"}`);
+  const html2 = await res2.text();
+  const doc2 = new DOMParser().parseFromString(html2, "text/html");
+  const text2 = doc2?.body?.innerText || html2;
+  return parseFromInnerText(text2);
 }
