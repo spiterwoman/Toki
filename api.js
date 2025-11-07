@@ -160,7 +160,7 @@ exports.setApp = function (app, client)
     var refreshedToken = null;
     try
     {
-      refreshedToken = token.refresh(jwtToken);
+      refreshedToken = token.refresh(accessToken);
     }
     catch(e)
     {
@@ -272,7 +272,25 @@ exports.setApp = function (app, client)
 
     res.status(200).json(ret);
   });
-
+  app.post('/api/logout', async(req,res,next) => {
+          // incoming: jwtToken
+          // outgoing: error, jwtToken
+    const {jwtToken} = req.body;
+    var error = '';
+    try {
+            if (token.isExpired(jwtToken)){
+                    // Expired Token
+              var r = {error:'Token expired', jwtToken:''};
+              res.status(200).json(r);
+              return;
+           }
+        } catch (e) {
+                console.log(e.message);
+        }
+          // return to tell client to clear stored token
+        var ret = {error: error, jwtToken:''};
+        res.status(200).json(ret);
+  });
 
   app.post('/api/createReminder', async (req, res) => {
 
@@ -486,7 +504,387 @@ exports.setApp = function (app, client)
 
     res.status(200).json(ret);
   });
-        
+
+  app.post('/api/createTask', async(req,res) => {
+
+	  // incoming: userId, accessToken, title, description, status, priority, dueDate, completed
+	  // success, taskId, error, accessToken
+    const {userId, accessToken, title, description, status, priority, dueDate, completed}= req.body;
+    let ret = {};
+    // Make sure JWT is still valid
+    try {
+	    if (token.isExpired(accessToken)){
+		    return res.status(200).json({error:'The JWT is no longer valid', accessToken: ''});
+	    }
+    } catch (e){
+	    console.log(e.message);
+    }
+    try {
+	const db = client.db('tokidatabase');
+	    // insert to tasks collections
+	const newTask = {
+		userId: new ObjectId(userId),
+		title,
+		description: description || '',
+		status: status || 'not started',
+		priority: priority || 'medium',
+		dueDate: dueDate ? new Date(dueDate) : null,
+		completed: (typeof completed === 'object' && completed !== null)
+		  ? completed
+		  : {isCompleted: false, completedAt: null },
+		createdAt: new Date(), 
+		updatedAt: new Date()
+	};
+	    const result = await db.collection('tasks').insertOne(newTask);
+	    const taskId = result.insertedId.toString();
+	    console.log('Task created successfully');
+	    ret = {
+		    success: true,
+		    taskId,
+		    error: 'success, task added to database',
+		    accessToken
+	    };
+    } catch (e) {
+	    ret = {
+		    success: false,
+		    taskId: '',
+		    error: e.toString(),
+		    accessToken
+	    };
+    }
+	  // Refresh JWT
+	  let refreshedToken = null;
+	  try {
+		  refreshedToken = token.refresh(accessToken);
+	  } catch (e) {
+		  console.log(e.message);
+	  }
+	  res.status(200).json(ret);
+  });
+	// view task based on taskId for specific task and userId for all tasks
+  app.post('/api/viewTask', async(req,res)=>{
+	  // incoming: userId, accessToken, taskId
+	  // outgoing: all tasks / single task, error
+    const {userId, accessToken, taskId} = req.body;
+    let ret = {};
+	// validate JWT
+    try{
+	    if (token.isExpired(accessToken)){
+		    return res
+		      .status(200)
+		      .json({error: 'The JWT is no longer valid', accessToken: ''});
+	    }
+    }catch(e) {
+	    console.log(e.message);
+    }
+	  try{
+		  const db = client.db('tokidatabase');
+		  const tasksCollection = db.collection('tasks');
+		  if (taskId){
+			  // specific task
+		    const task = await tasksCollection.findOne({
+			    _id: new ObjectId(taskId),
+			    userId: new ObjectId(userId),
+		    });
+		  if (!task){
+			  ret = {success: false, error: 'Task not found', accessToken};
+		  } else {
+			  ret = {success: true, task, error: '', accessToken};
+		  }
+		  } else {
+			  // all tasks
+			  const tasks = await tasksCollection
+			  .find({userId: new ObjectId(userId)})
+			  .sort({createdAt: -1})
+			  .toArray();
+			ret = {success: true, tasks, error: '', accessToken};
+		  }
+	  } catch (e){
+		  ret = {success: false, error: e.toString()};
+	  }
+	  // Refresh JWT
+	  let refreshedToken = null;
+	  try {
+		  refreshedToken = token.refresh(accessToken);
+	  } catch (e){
+		  console.log(e.message);
+	  } 
+	  res.status(200).json(ret);
+  });
+  app.post('/api/editTask', async(req, res)=>{
+	  // incoming: userId, accessToken, taskId, title, description, status, priority, dueDate, completed
+	  // outgoing: success, updatedTask, error, accessToken
+    const {userId, accessToken, taskId, title, description, status, priority, dueDate, completed} = req.body;
+	  let ret = {};
+
+	 // Verify JWT
+	 try {
+		if (token.isExpired(accessToken)){
+			return res.status(200).json({error: 'The JWT is no longer valid', accessToken: ''});
+		}
+	 } catch (e) {
+		 console.log(e.message);
+	 } 
+	 try {
+		 const db = client.db('tokidatabase');
+		 const tasksCollection = db.collection('tasks');
+
+		 // Update to the fields needed
+	const updateFields = {
+		updatedAt: new Date()
+	}
+	if (title) updateFields.title = title;
+	if (description) updateFields.description = description;
+	if (status) updateFields.status = status;
+	if (priority) updateFields.priority = priority;
+	if (dueDate) updateFields.dueDate = dueDate;
+	if (completed) updateFields.completed = completed;
+
+	const result = await tasksCollection.updateOne(
+		{ _id: new ObjectId(taskId), userId: new ObjectId(userId)},
+		{ $set: updateFields}
+	);
+	if (result.matchedCount === 0){
+		// No tasks
+		ret = { success: false, error: 'Task not found or unauthorized', accessToken};
+	} else {
+		const updatedTask = await tasksCollection.findOne({_id: new ObjectId(taskId)});
+		ret = { success: true, updatedTask, error: '', accessToken};
+	}
+	} catch (e){
+		ret = { success: false, error: e.toString(), accessToken};
+	}
+	// Refresh JWT
+	try {
+		const refreshedToken = token.refresh(accessToken);
+		ret.accessToken = refreshedToken;
+	} catch (e){
+		console.log(e.message);
+	}
+	  res.status(200).json(ret);
+  });
+
+  app.post('/api/deleteTask', async (req, res) => {
+	  // incoming: userId, accessToken, taskId
+	  // outgoing: success, error, accessToken
+    const { userId, accessToken, taskId} = req.body;
+    let ret = {};
+
+	  // verify JWT
+	  try {
+		  if (token.isExpired(accessToken)){
+			  return res.status(200).json({error: 'The JWT is not longer valid', accessToken: '' });
+		  }
+	  } catch (e) {
+		  console.log(e.message);
+	  } 
+	  try {
+		  const db = client.db('tokidatabase');
+		  const tasksCollection = db.collection('tasks');
+
+		  const result = await tasksCollection.deleteOne({
+			  _id: new ObjectId(taskId),
+			  userId: new ObjectId(userId),
+		  });
+		  if (result.deletedCount === 0){
+			  ret = { success: false, error: 'Task not found or unauthorized', accessToken};
+		  }else{
+			  ret = { success: true, error: 'Task deleted successfully', accessToken};
+		  }
+	} catch (e){
+	ret = { success: false, error: e.toString(), accessToken};
+	}
+	  // Refresh JWT
+	  try {
+		  const refreshedToken = token.refresh(accessToken);
+		  ret.accessToken = refreshedToken;
+	  } catch (e){
+		  console.log(e.message);
+	  }
+
+	  res.status(200).json(ret);
+  });
+
+  app.post('/api/createCalendarEvent', async(req, res) => {
+	   // incoming : userId, accessToken, title, description, location, startTime, endTime} 
+	   // outgoing: success, eventId, error, accessToken
+    const { userId, accessToken, title, description, location, startDate, endDate, color, allDay, reminder} = req.body; 
+    let ret = {}
+
+	  try {
+		  if (token.isExpired(accessToken)){
+			  return res.status(200).json({error: 'The JWT is no longer valid', accessToken: ''});
+		  }
+	  } catch (e) {
+			  console.log(e.message);
+		  }
+		  try {
+			  const db = client.db('tokidatabase');
+			  const newEvent = {
+				  userId: new ObjectId(userId),
+				  title,
+				  description,
+				  location,
+				  startDate: new Date(startDate),
+				  endDate: new Date(endDate),
+				  color: color || {},
+				  reminder: reminder || {},
+				  allDay: allDay || {},
+				  createdAt: new Date(),
+				  updatedAt: new Date(), 
+			  }; 
+	const result = await db.collection('calendarevents').insertOne(newEvent);
+	const eventId = result.insertedId.toString();
+	
+	ret = { success: true, eventId, error: 'success, event created', accessToken };
+	} catch (e){
+		ret = { success: false, error: e.toString(), accessToken };
+	}
+
+	try {
+		const refreshedToken = token.refresh(accessToken);
+		ret.accessToken = refreshedToken;
+	} catch (e){
+		console.log(e.message);
+	}
+		  res.status(200).json(ret);
+	  });
+
+  app.post('/api/viewCalendarEvent', async(req,res)=>{
+	  // incoming: userId, accessToken
+	  // outgoing: single event or list of events
+	const { userId, accessToken, eventId} = req.body;
+	  let ret = {};
+
+	  try{
+		  if (token.isExpired(accessToken)){
+			  return res.status(200).json({error: 'The JWT is no longer valid', accessToken: ''});
+		  } 
+	  } catch (e) {
+		  console.log(e.message);
+	  }
+	  try {
+		  const db = client.db('tokidatabase');
+		  const eventsCollection = db.collection('calendarevents');
+
+		  if (eventId) {
+			  const event = await eventsCollection.findOne({
+				  _id: new ObjectId(eventId),
+				  userId: new ObjectId(userId)
+			  });
+
+		ret = event
+			  ? { success: true, event, error: '', accessToken}
+			  : { success: false, error: 'Event not found', accessToken};
+		  }else {
+			  const events = await eventsCollection
+			  .find({userId: new ObjectId(userId)})
+			  .sort({startTime: 1})
+			  .toArray();
+		ret = { success: true, events, error: '', accessToken};
+		  }
+	  }catch (e){
+		  ret = { success: false, error: e.toString(), accessToken};
+	  } 
+
+	  try {
+		  const refreshedToken = token.refresh(accessToken);
+		  ret.accessToken = refreshedToken;
+	  } catch (e){
+		  console.log(e.message);
+	  } 
+	  res.status(200).json(ret);
+  });
+
+  app.post('/api/editCalendarEvent', async(req, res)=>{
+	  // incoming: userId, accessToken, eventId, title, description, location, startTime, endTime
+	  const { userId, accessToken, eventId, title, description, location, startDate, endDate, color, allDay, reminder} = req.body;
+	  let ret = {};
+
+	  try {
+		  if (token.isExpired(accessToken)){
+			  return res.status(200).json({error: 'The JWT is no longer valid', accessToken: ''});
+		  }
+	  } catch (e){
+		  console.log(e.message);
+	  } 
+
+	  try {
+		  const db = client.db('tokidatabase');
+		  const eventsCollection = db.collection('calendarevents');
+
+		  const updateFields = { updatedAt: new Date() };
+		  if (title) updateFields.title = title;
+		  if (description) updateFields.description = description; 
+		  if (location) updateFields.location = location;
+		  if (startDate) updateFields.startDate = new Date(startDate);
+		  if (endDate) updateFields.endDate = new Date(endDate);
+		  if (color) updateFields.color = color;
+		  if (allDay) updateFields.allDay = allDay;
+		  if (reminder) updateFields.reminder = reminder;
+
+		  const result = await eventsCollection.updateOne(
+			  { _id: new ObjectId(eventId), userId: new ObjectId(userId) },
+			  { $set: updateFields}
+		  );
+
+		  if (result.matchedCount === 0) {
+			  ret = { success: false, error: 'Event not found or unauthorized', accessToken };
+		  } else {
+			  const updatedEvent = await eventsCollection.findOne({_id:new ObjectId(eventId)});
+		  ret = { success: true, updatedEvent, error: '', accessToken};
+		  } 
+	  } catch (e) {
+		  ret = { success: false, error: e.toString(), accessToken};
+	  } 
+	  try {
+		  const refreshedToken = token.refresh(accessToken);
+		  ret.accessToken = refreshedToken;
+	  } catch (e) {
+		  console.log(e.message);
+	  } 
+	  res.status(200).json(ret);
+  });
+	
+  app.post('/api/deleteCalendarEvent', async(req, res) =>{
+	  // incoming: userId, accessToken, eventId
+	  // outgoing: success, error
+
+	  const { userId, accessToken, eventId } = req.body;
+	  let ret = {};
+
+	  try{
+		  if (token.isExpired(accessToken)){
+			  return res.status(200).json({error: 'The JWT is no longer valid', accessToken: '' });
+		  }
+		  } catch (e) {
+			  console.log(e.message);
+		  } 
+
+		  try {
+			  const db = client.db('tokidatabase');
+			  const eventsCollection = db.collection('calendarevents');
+			  const result = await eventsCollection.deleteOne({
+				  _id: new ObjectId(eventId),
+				  userId: new ObjectId(userId)
+			  });
+
+			  ret = 
+				  result.deletedCount === 0
+			  ? {success: false, error: 'Event not found or unauthorized', accessToken }
+			  : {success: true, error: 'Event deleted successfully', accessToken};
+		  } catch (e) {
+			  ret = { success: false, error: e.toString(), accessToken};
+		  } 
+		  try{
+			  const refreshedToken = token.refresh(accessToken);
+			  ret.accessToken = refreshedToken;
+		  } catch (e) {
+			  console.log(e.message);
+		  } 
+
+		  res.status(200).json(ret);
+	  });
   
   
   // Try to find Chrome/Chromium executable
