@@ -353,6 +353,56 @@ exports.setApp = function (app, client)
     res.status(200).json(ret);
   });
 
+  app.post('/api/viewReminder', async(req,res)=>{
+	  // incoming: userId, accessToken, taskId
+	  // outgoing: all tasks / single task, error
+    const {userId, accessToken, reminderId} = req.body;
+    let ret = {};
+	// validate JWT
+    try{
+	    if (token.isExpired(accessToken)){
+		    return res
+		      .status(200)
+		      .json({error: 'The JWT is no longer valid', accessToken: ''});
+	    }
+    }catch(e) {
+	    console.log(e.message);
+    }
+	  try{
+		  const db = client.db('tokidatabase');
+		  const remindersCollection = db.collection('reminders');
+		  if (reminderId){
+			  // specific task
+		    const task = await remindersCollection.findOne({
+			    _id: new ObjectId(reminderId),
+			    userId: new ObjectId(userId),
+		    });
+		  if (!reminders){
+			  ret = {success: false, error: 'Reminder not found', accessToken};
+		  } else {
+			  ret = {success: true, reminders, error: '', accessToken};
+		  }
+		  } else {
+			  // all reminders
+			  const reminders = await remindersCollection
+			  .find({userId: new ObjectId(userId)})
+			  .sort({createdAt: -1})
+			  .toArray();
+			ret = {success: true, reminders, error: '', accessToken};
+		  }
+	  } catch (e){
+		  ret = {success: false, error: e.toString()};
+	  }
+	  // Refresh JWT
+	  let refreshedToken = null;
+	  try {
+		  refreshedToken = token.refresh(accessToken);
+	  } catch (e){
+		  console.log(e.message);
+	  } 
+	  res.status(200).json(ret);
+  });
+
   app.post('/api/editReminder', async(req, res, next) => {
 
     //this is all info passed from FE
@@ -895,6 +945,7 @@ exports.setApp = function (app, client)
   
   
   // Try to find Chrome/Chromium executable
+  /*
   async function updateGarages() {
     const maxRetries = 3;
     let retryCount = 0;
@@ -985,11 +1036,11 @@ exports.setApp = function (app, client)
       }
     }
   }
-
   updateGarages();
   setInterval(updateGarages, 2 * 60 * 1000);
+  */
 
-/* V2 to try
+// V2 to try
   // Try to find Chrome/Chromium executable
 async function updateGarages() {
   const maxRetries = 3;
@@ -1119,16 +1170,16 @@ async function updateGarages() {
             { upsert: true }
           );
         }
-        console.log(`[${new Date().toLocaleTimeString()}] Garage data updated:`, garages.length, "garages");
+        console.log(`[${new Date().toLocaleTimeString()}] Garage data updated v2:`, garages.length, "garages");
       } else {
-        console.warn(`[${new Date().toLocaleTimeString()}] Warning: No garage data found`);
+        console.warn(`[${new Date().toLocaleTimeString()}] Warning: No garage data found v2`);
       }
 
       break;
 
     } catch (err) {
       retryCount++;
-      console.error(`Error scraping/updating garages (attempt ${retryCount}/${maxRetries}):`, err.message);
+      console.error(`Error scraping/updating garages via v2 (attempt ${retryCount}/${maxRetries}):`, err.message);
 
       if (browser) {
         try { await browser.close(); } catch {}
@@ -1138,15 +1189,100 @@ async function updateGarages() {
       if (retryCount < maxRetries) {
         await new Promise(resolve => setTimeout(resolve, Math.pow(2, retryCount) * 1000));
       } else {
-        console.error("Max retries reached. Will try again on next interval.");
+        console.error("Max retries reached. Will try again on next interval. v2");
       }
     }
   }
 }
 
 updateGarages();
-setInterval(updateGarages, 2 * 60 * 1000); */
-  
+setInterval(updateGarages, 2 * 60 * 1000); //*/
+
+
+app.post('/api/viewAPOD', async(req,res)=>{
+	  // incoming: userId, accessToken, taskId
+	  // outgoing: all tasks / single task, error
+    const {accessToken, date} = req.body;
+    let ret = {};
+	// validate JWT
+    try{
+	    if (token.isExpired(accessToken)){
+		    return res
+		      .status(200)
+		      .json({error: 'The JWT is no longer valid', accessToken: ''});
+	    }
+    }catch(e) {
+	    console.log(e.message);
+    }
+	  try{
+		  const db = client.db('tokidatabase');
+		  const apodsCollection = db.collection('apods');
+
+      const apod = await apodsCollection.findOne({
+        date: date,
+      });
+
+      if (!apod) {
+        return res.status(200).json({
+          success: false, 
+          error: 'No APOD found for this date',
+          accessToken
+        });
+      } 
+
+      const title = apod.title;
+      const hdurl = apod.hdurl;
+      const explanation = apod.explanation;
+      const thumbnailUrl = apod.thumbnailUrl;
+      const copyright = apod.copyright || null,
+
+
+			ret = {success: true, title, hdurl, explanation, thumbnailUrl, copyright , error: '', accessToken};
+    }
+	  catch (e)
+    {
+		  ret = {success: false, error: e.toString()};
+	  }
+	  // Refresh JWT
+	  let refreshedToken = null;
+	  try {
+		  refreshedToken = token.refresh(accessToken);
+	  } catch (e){
+		  console.log(e.message);
+	  } 
+	  res.status(200).json(ret);
+  });
+
+async function updateAPOD() {
+  try {
+    const response = await fetch('https://api.nasa.gov/planetary/apod?api_key=50k2BOQgfXtPpguZO2BJCztlcCxqh1nG2fofFVBm');
+    const data = await response.json();
+    console.log(data);
+
+    const document = {
+    title: data.title,
+    date: data.date,
+    hdurl: data.hdurl,
+    explanation: data.explanation,
+    thumbnailUrl: data.url,
+    copyright: data.copyright || null,
+    createdAt: new Date(),
+    updatedAt: new Date()
+    };
+
+    await client.connect();
+    const db = client.db('tokidatabase');
+    const collection = db.collection("apods");
+
+    const result = await collection.insertOne(document);
+    return result;
+  } catch (error) {
+    console.error('Error fetching NASA images:', error);
+  }
+}
+
+updateAPOD();
+setInterval(updateAPOD, 24 * 60 * 1000); 
 
 
 }
@@ -1168,6 +1304,8 @@ function sendVerEmail(email, verificationToken)
     .then(() => {console.log('Email sent')})
     .catch((error) => {console.error(error)});
 }
+
+
 
 
         
