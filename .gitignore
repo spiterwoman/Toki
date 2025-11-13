@@ -1,3 +1,4 @@
+sendgrid.env
 # Logs
 logs
 *.log
