@@ -63,6 +63,54 @@ exports.setApp = function (app, client)
     res.status(200).json(ret);
   });
 
+  app.post('/api/forgotPass', async (req, res, next) => {
+    // incoming: email
+    // outgoing: tempPassword
+
+    const {email} = req.body;
+    let ret = {};
+
+    const db = client.db('tokidatabase');
+    const user= await db.collection('users').findOne({  email: email });
+
+    //make random password
+    const oldPassword = user.password
+    const tempPassword = "temppasssRn?12"
+    try 
+    {
+      const result = await db.collection('users').updateOne(
+        {  email: email },
+        { $set: { password:tempPassword } }
+      );
+
+      if (result.matchedCount > 0) 
+        console.log("set temp password");
+      else console.log("failed set temp password");
+    } 
+    catch (e) 
+    {
+      console.log(e.toString());
+    }
+
+    //password updated, send user temp password
+    try {
+
+
+        console.log("send email");
+
+        sendTempPassEmail(user.email, tempPassword);
+
+        console.log("should have sent email, go to verify page");
+
+        ret = { email, oldPassword, lastName, tempPassword, error: 'none, send to login page' };
+      } 
+     catch (e) {
+      ret = { email, oldPassword, lastName, tempPassword, error: e.toString() };
+    }
+
+    res.status(200).json(ret);
+  });
+
   app.post('/api/loginUser', async (req, res, next) => {
     // incoming: email, password
     // outgoing: id, firstName, lastName, accessToken, error
@@ -1305,7 +1353,22 @@ function sendVerEmail(email, verificationToken)
     .catch((error) => {console.error(error)});
 }
 
+function sendTempPassEmail(email, tempPassword)
+{
+  const msg = 
+  {
+    to: email,
+    from: 'no-reply@mytoki.app',
+    subject: "Your Temporary Password",
+    text: `Your temporary password is: ${tempPassword} \nPlease login with this password and go to edit account to update it`,
+    html: `<p>Your verification code is: <b>${tempPassword}</b></p>`,
+  };
 
+  sgMail
+    .send(msg)
+    .then(() => {console.log('Email sent')})
+    .catch((error) => {console.error(error)});
+}
 
 
         
