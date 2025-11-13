@@ -82,14 +82,11 @@ exports.setApp = function (app, client)
         {  email: email },
         { $set: { password:tempPassword } }
       );
-
-      if (result.matchedCount > 0) 
         console.log("set temp password");
-      else console.log("failed set temp password");
     } 
     catch (e) 
     {
-      console.log(e.toString());
+      console.log("failed set temp password");    
     }
 
     //password updated, send user temp password
@@ -102,10 +99,10 @@ exports.setApp = function (app, client)
 
         console.log("should have sent email, go to verify page");
 
-        ret = { email, oldPassword, lastName, tempPassword, error: 'none, send to login page' };
+        ret = { email, oldPassword, tempPassword, error: 'none, send to login page' };
       } 
      catch (e) {
-      ret = { email, oldPassword, lastName, tempPassword, error: e.toString() };
+      ret = { email, oldPassword, tempPassword, error: e.toString() };
     }
 
     res.status(200).json(ret);
@@ -1368,7 +1365,7 @@ function sendTempPassEmail(email, tempPassword)
     from: 'no-reply@mytoki.app',
     subject: "Your Temporary Password",
     text: `Your temporary password is: ${tempPassword} \nPlease login with this password and go to edit account to update it`,
-    html: `<p>Your verification code is: <b>${tempPassword}</b></p>`,
+    html: `<p>Your temporary password is: <b>${tempPassword}</b>\nPlease login with this password and go to edit account to update it</p>`,
   };
 
   sgMail
