@@ -11,14 +11,8 @@ type Reminder = {
   done?: boolean;
 };
 
-const seed: Reminder[] = [
-  { id: "r1", title: "Submit expense report" },
-  { id: "r2", title: "Call dentist for appointment" },
-  { id: "r3", title: "Pick up dry cleaning" },
-];
-
 export default function RemindersPage() {
-  const [reminders, setReminders] = React.useState<Reminder[]>(seed);
+  const [reminders, setReminders] = React.useState<Reminder[]>([]);
   const [title, setTitle] = React.useState("");
   const [open, setOpen] = React.useState(false);
 

@@ -9,6 +9,7 @@ import RemindersPage from "./pages/RemindersPage";
 import WeatherPage from "./pages/WeatherPage";
 import NasaPhotoPage from "./pages/NasaPhotoPage";
 import UCFParkingPage from "./pages/UCFParkingPage";
+import SettingsPage from "./pages/SettingsPage";
 
 export default function App(){
   const navigate = useNavigate();
@@ -26,6 +27,7 @@ export default function App(){
       <Route path="/weather" element={<WeatherPage />} />
       <Route path="/nasa-photo" element={<NasaPhotoPage />} />
       <Route path="/parking" element={<UCFParkingPage />} />
+      <Route path="/settings" element={<SettingsPage />} />
       <Route path="*" element={<Navigate to="/login" replace />} />
     </Routes>
   );

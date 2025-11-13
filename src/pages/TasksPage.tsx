@@ -4,13 +4,8 @@ import GlassCard from "../components/GlassCard";
 import type { Task } from "../types";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from "../components/ui/dialog";
 
-const seed: Task[] = [
-  { id: "t1", title: "Review project proposal", time: "11:00 AM", tag: "Work", priority: "high" },
-  { id: "t2", title: "Lunch with Sarah", time: "12:30 PM", tag: "Personal", priority: "medium" },
-];
-
 export default function TasksPage() {
-  const [tasks, setTasks] = useState<Task[]>(seed);
+  const [tasks, setTasks] = useState<Task[]>([]);
   const [title, setTitle] = useState("");
   const [time, setTime] = useState("");
   const [tag, setTag] = useState<Task["tag"]>("Work");
@@ -53,7 +48,7 @@ export default function TasksPage() {
                   <input type="checkbox" checked={!!t.done} onChange={() => toggle(t.id)} />
                   <div className="vstack" style={{ gap: 4 }}>
                     <div style={{ fontWeight: 600, textDecoration: t.done ? "line-through" : "none" }}>{t.title}</div>
-                    <div style={{ color: "var(--muted)" }}>{[t.time, t.tag].filter(Boolean).join(" · ")}</div>
+                    <div style={{ color: "var(--muted)" }}>{[t.time, t.tag].filter(Boolean).join(" | ")}</div>
                   </div>
                 </div>
                 <div className="hstack" style={{ gap: 8 }}>

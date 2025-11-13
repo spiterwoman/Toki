@@ -4,9 +4,18 @@ import GlassCard from "../components/GlassCard";
 import type { CalendarEvent } from "../types";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from "../components/ui/dialog";
 
-function fmt(d: Date) { return d.toISOString().slice(0, 10); }
+function fmt(d: Date) {
+  const year = d.getFullYear();
+  const month = `${d.getMonth() + 1}`.padStart(2, "0");
+  const day = `${d.getDate()}`.padStart(2, "0");
+  return `${year}-${month}-${day}`;
+}
 
-//
+function parseKey(key: string) {
+  const [y, m, d] = key.split("-").map((part) => Number.parseInt(part, 10));
+  return new Date(y || 1970, (m || 1) - 1, d || 1);
+}
+
 function buildMonth(year: number, month: number) {
   const first = new Date(year, month, 1);
   const start = new Date(first);
@@ -19,16 +28,12 @@ function buildMonth(year: number, month: number) {
 
 type UIEvent = CalendarEvent & { theme?: "purple" | "pink" | "blue" };
 
-const seed: UIEvent[] = [
-  { id: "e1", title: "Team Meeting", date: fmt(new Date()), time: "9:00 AM", theme: "purple" },
-];
-
 export default function CalendarPage() {
   const now = new Date();
   const [year, setYear] = useState(now.getFullYear());
   const [month, setMonth] = useState(now.getMonth());
   const [selected, setSelected] = useState(fmt(now));
-  const [events, setEvents] = useState<UIEvent[]>(seed);
+  const [events, setEvents] = useState<UIEvent[]>([]);
   const [title, setTitle] = useState("");
   const [time, setTime] = useState("");
   const [theme, setTheme] = useState<UIEvent["theme"]>("purple");
@@ -39,6 +44,7 @@ export default function CalendarPage() {
 
   const eventsToday = events.filter((e) => e.date === selected);
   const upcoming = [...events].sort((a, b) => a.date.localeCompare(b.date));
+  const selectedLabel = parseKey(selected).toLocaleDateString(undefined, { weekday: "long", month: "long", day: "numeric" });
 
   const go = (delta: number) => {
     const d = new Date(year, month + delta, 1);
@@ -119,7 +125,7 @@ export default function CalendarPage() {
           <GlassCard style={{ padding: 20 }}>
             <div className="hstack" style={{ marginBottom: 10 }}>
               <span style={{ color: "#ff89d7" }}>📅</span>
-              <strong>{new Date(selected).toLocaleDateString(undefined, { weekday: "long", month: "long", day: "numeric" })}</strong>
+              <strong>{selectedLabel}</strong>
             </div>
             <div className="list">
               {eventsToday.length === 0 && <div style={{ color: "var(--muted)" }}>No events today.</div>}
@@ -136,9 +142,12 @@ export default function CalendarPage() {
           </GlassCard>
         </div>
 
-        <GlassCard style={{ padding: 20 }}>
-          <strong>Upcoming Events</strong>
-          <div className="list" style={{ marginTop: 12 }}>
+          <GlassCard style={{ padding: 20 }}>
+            <strong>Upcoming Events</strong>
+            <div className="list" style={{ marginTop: 12 }}>
+            {upcoming.length === 0 && (
+              <div style={{ color: "var(--muted)" }}>Add anticipated events to see them on your calendar.</div>
+            )}
             {upcoming.map((ev) => {
               const bg = ev.theme === "purple"
                 ? "linear-gradient(135deg, rgba(168,85,247,.18), rgba(236,72,153,.12))"
@@ -152,7 +161,7 @@ export default function CalendarPage() {
                   <div className="vstack">
                     <div style={{ fontWeight: 600 }}>{ev.title}</div>
                     <div style={{ color: "var(--muted)" }}>
-                      {new Date(ev.date).toLocaleDateString(undefined, { month: "short", day: "numeric" })} {ev.time ? `at ${ev.time}` : ""}
+                      {parseKey(ev.date).toLocaleDateString(undefined, { month: "short", day: "numeric" })} {ev.time ? `at ${ev.time}` : ""}
                     </div>
                   </div>
                   <button className="btn" onClick={() => remove(ev.id)}>Delete</button>

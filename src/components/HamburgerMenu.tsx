@@ -50,6 +50,28 @@ export default function HamburgerMenu({ open, onClose }: Props) {
 
         <div style={{ position: "absolute", left: 20, right: 20, bottom: 20 }}>
           <div style={{ height: 1, background: "var(--card-border)", opacity: 0.6, marginBottom: 12 }} />
+
+          <Link
+            to="/settings"
+            onClick={onClose}
+            className="hstack"
+            style={{
+              width: "100%",
+              padding: "12px 14px",
+              borderRadius: 14,
+              border: "1px solid var(--card-border)",
+              background: pathname === "/settings" ? "rgba(255,255,255,.08)" : "rgba(255,255,255,.04)",
+              color: "inherit",
+              textDecoration: "none",
+              marginBottom: 12,
+              justifyContent: "space-between",
+              fontWeight: 600,
+            }}
+            >
+            <span>Settings</span>
+            <span aria-hidden="true" style={{ opacity: 0.7 }}>&gt;</span>
+          </Link>
+
           <button
             onClick={() => nav("/login")}
             style={{
