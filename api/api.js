@@ -1322,6 +1322,13 @@ async function updateAPOD() {
     const db = client.db('tokidatabase');
     const collection = db.collection("apods");
 
+    const existingAPOD = await collection.findOne({ date: data.date });
+    
+    if (existingAPOD) {
+      console.log(`APOD for date ${data.date} already exists. Skipping insert.`);
+      return { acknowledged: false, message: 'APOD already exists' };
+    }
+
     const result = await collection.insertOne(document);
     return result;
   } catch (error) {
