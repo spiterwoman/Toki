@@ -3,6 +3,8 @@ const cors = require('cors');
 const path = require('path');
 const { MongoClient } = require('mongodb');
 require('dotenv').config({ path: './priv.env' }); // your .env file
+require('dotenv').config({ path: './sendgrid.env' });
+
 
 const app = express();
 
