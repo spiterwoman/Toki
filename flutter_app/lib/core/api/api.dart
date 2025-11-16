@@ -140,4 +140,64 @@ class Api {
       throw Exception('Unexpected error: $e');
     }
   }
+
+  // ---- NASA APOD ----
+
+  /// Format a DateTime as YYYY-MM-DD to match how APOD dates are stored
+  String _formatApodDate(DateTime date) {
+    final y = date.year.toString().padLeft(4, '0');
+    final m = date.month.toString().padLeft(2, '0');
+    final d = date.day.toString().padLeft(2, '0');
+    return '$y-$m-$d';
+  }
+
+  /// Fetch APOD info for a given date from the backend.
+  /// Backend route: POST /api/viewAPOD
+  ///
+  /// Returns a map like:
+  /// {
+  ///   success: true/false,
+  ///   title: ...,
+  ///   hdurl: ...,
+  ///   explanation: ...,
+  ///   thumbnailUrl: ...,
+  ///   copyright: ...,
+  ///   error: '',
+  ///   accessToken: '...'
+  /// }
+  Future<Map<String, dynamic>> viewApod({
+    required DateTime date,
+  }) async {
+    // Read the JWT we stored during login/verify
+    final accessToken = await _store.read(key: 'accessToken');
+    if (accessToken == null) {
+      throw Exception('No access token found. User may not be logged in.');
+    }
+
+    final dateStr = _formatApodDate(date);
+
+    try {
+      final response = await _dio.post(
+        '/api/viewAPOD',
+        data: {
+          'accessToken': accessToken,
+          'date': dateStr,
+        },
+      );
+
+      return Map<String, dynamic>.from(response.data);
+    } on DioException catch (e) {
+      if (e.response != null) {
+        // Server responded with an error status
+        throw Exception(
+          'Server error: ${e.response?.statusCode} ${e.response?.data}',
+        );
+      } else {
+        // Network / timeout
+        throw Exception('Network error: ${e.message}');
+      }
+    } catch (e) {
+      throw Exception('Unexpected error: $e');
+    }
+  }
 }

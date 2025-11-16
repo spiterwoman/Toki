@@ -2,45 +2,101 @@ import 'package:flutter/material.dart';
 
 import '../../core/widgets/page_shell.dart';
 import '../../core/widgets/glass_card.dart';
+import '../../core/api/api.dart';
+final api = Api('https://mytoki.app');
 
-class NasaPhotoPage extends StatelessWidget {
+class NasaPhotoPage extends StatefulWidget {
   const NasaPhotoPage({super.key});
 
   @override
-  Widget build(BuildContext context) {
-    const mockNasaData = _NasaPhoto(
-      title: 'The Magnificent Nebula NGC 6302',
-      date: 'October 9, 2025',
-      explanation:
-          'The bright clusters and nebulae of planet Earth\'s night sky are often named for flowers or insects. Though its wingspan covers over 3 light-years, NGC 6302 is no exception. With an estimated surface temperature of about 250,000 degrees C, the dying central star of this particular planetary nebula has become exceptionally hot, shining brightly in ultraviolet light but hidden from direct view by a dense torus of dust.',
-      url:
-          'https://images.unsplash.com/photo-1642635715930-b3a1eba9c99f?crop=entropy&cs=tinysrgb&fit=max&fm=jpg&ixid=M3w3Nzg4Nzd8MHwxfHNlYXJjaHwxfHxzcGFjZSUyMHN0YXJzJTIwbmVidWxhfGVufDF8fHx8MTc1OTk3OTAxMXww&ixlib=rb-4.1.0&q=80&w=1080',
-      copyright: 'NASA/ESA Hubble Space Telescope',
-    );
+  State<NasaPhotoPage> createState() => _NasaPhotoPageState();
+}
 
-    const recentPhotos = <_RecentPhoto>[
-      _RecentPhoto(
-        id: 1,
-        title: 'Jupiter\'s Great Red Spot',
-        date: 'Oct 8, 2025',
-        thumbnail:
-            'https://images.unsplash.com/photo-1614732484003-ef9881555dc3?w=400',
-      ),
-      _RecentPhoto(
-        id: 2,
-        title: 'Andromeda Galaxy',
-        date: 'Oct 7, 2025',
-        thumbnail:
-            'https://images.unsplash.com/photo-1543722530-d2c3201371e7?w=400',
-      ),
-      _RecentPhoto(
-        id: 3,
-        title: 'Saturn\'s Rings',
-        date: 'Oct 6, 2025',
-        thumbnail:
-            'https://images.unsplash.com/photo-1614313913007-2b4ae8ce32d6?w=400',
-      ),
+class _NasaPhotoPageState extends State<NasaPhotoPage> {
+  _NasaPhoto? _photo;
+  bool _loading = true;
+  String? _error;
+
+  @override
+  void initState() {
+    super.initState();
+    _loadApodForToday();
+  }
+
+  String _formatHumanDate(DateTime d) {
+    // Simple "Month day, year" (e.g. October 9, 2025) without adding intl
+    const months = [
+      'January',
+      'February',
+      'March',
+      'April',
+      'May',
+      'June',
+      'July',
+      'August',
+      'September',
+      'October',
+      'November',
+      'December',
     ];
+    return '${months[d.month - 1]} ${d.day}, ${d.year}';
+  }
+
+  Future<void> _loadApodForToday() async {
+    setState(() {
+      _loading = true;
+      _error = null;
+    });
+
+    final now = DateTime.now();
+
+    try {
+      final res = await api.viewApod(date: now);
+      print('APOD response: $res'); // Debug Log
+
+      if (res['success'] == true) {
+        final title = res['title'] as String? ?? 'NASA Photo of the Day';
+        final hdurl = res['hdurl'] as String?;
+        final thumb = res['thumbnailUrl'] as String?;
+        final explanation = res['explanation'] as String? ?? '';
+        final copyright = res['copyright'] as String? ?? 'NASA';
+
+        setState(() {
+          _photo = _NasaPhoto(
+            title: title,
+            date: _formatHumanDate(now),
+            explanation: explanation,
+            url: hdurl ?? thumb ?? '',
+            copyright: copyright,
+          );
+          _loading = false;
+        });
+      } else {
+        setState(() {
+          _error = res['error'] as String? ?? 'Failed to load APOD.';
+          _loading = false;
+        });
+      }
+    } catch (e) {
+      setState(() {
+        _error = e.toString();
+        _loading = false;
+      });
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    // Fallback dummy if we have nothing yet
+    final data = _photo ??
+        const _NasaPhoto(
+          title: 'Loading NASA Photo…',
+          date: '',
+          explanation: '',
+          url:
+              'https://images.unsplash.com/photo-1446776811953-b23d57bd21aa?auto=format&fit=crop&w=1200&q=80',
+          copyright: 'NASA',
+        );
 
     return PageShell(
       title: 'NASA Photo of the Day',
@@ -50,6 +106,20 @@ class NasaPhotoPage extends StatelessWidget {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
+            if (_loading && _photo == null)
+              const Padding(
+                padding: EdgeInsets.only(bottom: 8),
+                child: Center(child: CircularProgressIndicator()),
+              ),
+            if (_error != null)
+              Padding(
+                padding: const EdgeInsets.only(bottom: 8),
+                child: Text(
+                  _error!,
+                  style: const TextStyle(color: Colors.redAccent),
+                ),
+              ),
+
             // Main photo card
             GlassCard(
               child: Padding(
@@ -63,7 +133,7 @@ class NasaPhotoPage extends StatelessWidget {
                       children: [
                         Expanded(
                           child: Text(
-                            mockNasaData.title,
+                            data.title,
                             style: const TextStyle(
                               fontSize: 24,
                               fontWeight: FontWeight.bold,
@@ -72,37 +142,56 @@ class NasaPhotoPage extends StatelessWidget {
                           ),
                         ),
                         const SizedBox(width: 8),
-                        Row(
-                          mainAxisSize: MainAxisSize.min,
-                          children: [
-                            const Icon(Icons.calendar_today,
+                        if (data.date.isNotEmpty)
+                          Row(
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              const Icon(
+                                Icons.calendar_today,
                                 size: 16,
-                                color: Color.fromRGBO(255, 255, 255, 0.6)),
-                            const SizedBox(width: 4),
-                            Text(
-                              mockNasaData.date,
-                              style: const TextStyle(
-                                fontSize: 14,
                                 color: Color.fromRGBO(255, 255, 255, 0.6),
                               ),
-                            ),
-                          ],
-                        ),
+                              const SizedBox(width: 4),
+                              Text(
+                                data.date,
+                                style: const TextStyle(
+                                  fontSize: 14,
+                                  color: Color.fromRGBO(255, 255, 255, 0.6),
+                                ),
+                              ),
+                            ],
+                          ),
                       ],
                     ),
                     const SizedBox(height: 12),
 
                     // image
-                    ClipRRect(
-                      borderRadius: BorderRadius.circular(12),
-                      child: AspectRatio(
-                        aspectRatio: 16 / 9,
-                        child: Image.network(
-                          mockNasaData.url,
-                          fit: BoxFit.cover,
+                    if (data.url.isNotEmpty)
+                      ClipRRect(
+                        borderRadius: BorderRadius.circular(12),
+                        child: AspectRatio(
+                          aspectRatio: 16 / 9,
+                          child: Image.network(
+                            data.url,
+                            fit: BoxFit.cover,
+                          ),
+                        ),
+                      )
+                    else
+                      Container(
+                        height: 200,
+                        alignment: Alignment.center,
+                        decoration: BoxDecoration(
+                          borderRadius: BorderRadius.circular(12),
+                          color: Colors.white.withOpacity(0.05),
+                        ),
+                        child: const Text(
+                          'No image available',
+                          style: TextStyle(
+                            color: Color.fromRGBO(255, 255, 255, 0.6),
+                          ),
                         ),
                       ),
-                    ),
                     const SizedBox(height: 12),
 
                     // about + copyright
@@ -137,7 +226,9 @@ class NasaPhotoPage extends StatelessWidget {
                                     ),
                                     const SizedBox(height: 4),
                                     Text(
-                                      mockNasaData.explanation,
+                                      data.explanation.isNotEmpty
+                                          ? data.explanation
+                                          : 'Explanation not available.',
                                       style: const TextStyle(
                                         color: Color.fromRGBO(
                                             255, 255, 255, 0.8),
@@ -160,7 +251,7 @@ class NasaPhotoPage extends StatelessWidget {
                             ),
                             const SizedBox(width: 4),
                             Text(
-                              mockNasaData.copyright,
+                              data.copyright,
                               style: const TextStyle(
                                 fontSize: 12,
                                 color: Color.fromRGBO(255, 255, 255, 0.6),
@@ -170,6 +261,18 @@ class NasaPhotoPage extends StatelessWidget {
                         ),
                       ],
                     ),
+
+                    const SizedBox(height: 8),
+
+                    // Optional: a tiny refresh button
+                    Align(
+                      alignment: Alignment.centerRight,
+                      child: TextButton.icon(
+                        onPressed: _loading ? null : _loadApodForToday,
+                        icon: const Icon(Icons.refresh, size: 16),
+                        label: const Text('Refresh'),
+                      ),
+                    ),
                   ],
                 ),
               ),
@@ -177,7 +280,7 @@ class NasaPhotoPage extends StatelessWidget {
 
             const SizedBox(height: 16),
 
-            // Recent photos card
+            // Recent photos card (still mock for now)
             GlassCard(
               child: Padding(
                 padding: const EdgeInsets.all(16),
@@ -195,7 +298,6 @@ class NasaPhotoPage extends StatelessWidget {
                     const SizedBox(height: 8),
                     LayoutBuilder(
                       builder: (context, constraints) {
-                        // adapt columns based on width
                         int crossAxisCount = 1;
                         if (constraints.maxWidth > 700) {
                           crossAxisCount = 3;
@@ -263,6 +365,31 @@ class _RecentPhoto {
     required this.thumbnail,
   });
 }
+
+// Recent mock thumbnails (unchanged)
+const recentPhotos = <_RecentPhoto>[
+  _RecentPhoto(
+    id: 1,
+    title: 'Jupiter\'s Great Red Spot',
+    date: 'Oct 8, 2025',
+    thumbnail:
+        'https://images.unsplash.com/photo-1614732484003-ef9881555dc3?w=400',
+  ),
+  _RecentPhoto(
+    id: 2,
+    title: 'Andromeda Galaxy',
+    date: 'Oct 7, 2025',
+    thumbnail:
+        'https://images.unsplash.com/photo-1543722530-d2c3201371e7?w=400',
+  ),
+  _RecentPhoto(
+    id: 3,
+    title: 'Saturn\'s Rings',
+    date: 'Oct 6, 2025',
+    thumbnail:
+        'https://images.unsplash.com/photo-1614313913007-2b4ae8ce32d6?w=400',
+  ),
+];
 
 // ===== recent photo card ===============================================
 
