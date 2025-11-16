@@ -63,6 +63,51 @@ exports.setApp = function (app, client)
     res.status(200).json(ret);
   });
 
+  app.post('/api/forgotPass', async (req, res, next) => {
+    // incoming: email
+    // outgoing: tempPassword
+
+    const {email} = req.body;
+    let ret = {};
+
+    const db = client.db('tokidatabase');
+    const user= await db.collection('users').findOne({  email: email });
+
+    //make random password
+    const oldPassword = user.password
+    const tempPassword = "temppasssRn?12"
+    try 
+    {
+      const result = await db.collection('users').updateOne(
+        {  email: email },
+        { $set: { password:tempPassword } }
+      );
+        console.log("set temp password");
+    } 
+    catch (e) 
+    {
+      console.log("failed set temp password");    
+    }
+
+    //password updated, send user temp password
+    try {
+
+
+        console.log("send email");
+
+        sendTempPassEmail(user.email, tempPassword);
+
+        console.log("should have sent email, go to verify page");
+
+        ret = { email, oldPassword, tempPassword, error: 'none, send to login page' };
+      } 
+     catch (e) {
+      ret = { email, oldPassword, tempPassword, error: e.toString() };
+    }
+
+    res.status(200).json(ret);
+  });
+
   app.post('/api/loginUser', async (req, res, next) => {
     // incoming: email, password
     // outgoing: id, firstName, lastName, accessToken, error
@@ -272,6 +317,8 @@ exports.setApp = function (app, client)
 
     res.status(200).json(ret);
   });
+
+
   app.post('/api/logout', async(req,res,next) => {
           // incoming: jwtToken
           // outgoing: error, jwtToken
@@ -291,6 +338,7 @@ exports.setApp = function (app, client)
         var ret = {error: error, jwtToken:''};
         res.status(200).json(ret);
   });
+
 
   app.post('/api/createReminder', async (req, res) => {
 
@@ -348,6 +396,56 @@ exports.setApp = function (app, client)
     }
 
     res.status(200).json(ret);
+  });
+
+  app.post('/api/viewReminder', async(req,res)=>{
+	  // incoming: userId, accessToken, taskId
+	  // outgoing: all tasks / single task, error
+    const {userId, accessToken, reminderId} = req.body;
+    let ret = {};
+	// validate JWT
+    try{
+	    if (token.isExpired(accessToken)){
+		    return res
+		      .status(200)
+		      .json({error: 'The JWT is no longer valid', accessToken: ''});
+	    }
+    }catch(e) {
+	    console.log(e.message);
+    }
+	  try{
+		  const db = client.db('tokidatabase');
+		  const remindersCollection = db.collection('reminders');
+		  if (reminderId){
+			  // specific task
+		    const task = await remindersCollection.findOne({
+			    _id: new ObjectId(reminderId),
+			    userId: new ObjectId(userId),
+		    });
+		  if (!reminders){
+			  ret = {success: false, error: 'Reminder not found', accessToken};
+		  } else {
+			  ret = {success: true, reminders, error: '', accessToken};
+		  }
+		  } else {
+			  // all reminders
+			  const reminders = await remindersCollection
+			  .find({userId: new ObjectId(userId)})
+			  .sort({createdAt: -1})
+			  .toArray();
+			ret = {success: true, reminders, error: '', accessToken};
+		  }
+	  } catch (e){
+		  ret = {success: false, error: e.toString()};
+	  }
+	  // Refresh JWT
+	  let refreshedToken = null;
+	  try {
+		  refreshedToken = token.refresh(accessToken);
+	  } catch (e){
+		  console.log(e.message);
+	  } 
+	  res.status(200).json(ret);
   });
 
   app.post('/api/editReminder', async(req, res, next) => {
@@ -505,6 +603,7 @@ exports.setApp = function (app, client)
     res.status(200).json(ret);
   });
 
+
   app.post('/api/createTask', async(req,res) => {
 
 	  // incoming: userId, accessToken, title, description, status, priority, dueDate, completed
@@ -562,6 +661,7 @@ exports.setApp = function (app, client)
 	  res.status(200).json(ret);
   });
 	// view task based on taskId for specific task and userId for all tasks
+
   app.post('/api/viewTask', async(req,res)=>{
 	  // incoming: userId, accessToken, taskId
 	  // outgoing: all tasks / single task, error
@@ -611,6 +711,7 @@ exports.setApp = function (app, client)
 	  } 
 	  res.status(200).json(ret);
   });
+
   app.post('/api/editTask', async(req, res)=>{
 	  // incoming: userId, accessToken, taskId, title, description, status, priority, dueDate, completed
 	  // outgoing: success, updatedTask, error, accessToken
@@ -705,6 +806,7 @@ exports.setApp = function (app, client)
 	  res.status(200).json(ret);
   });
 
+
   app.post('/api/createCalendarEvent', async(req, res) => {
 	   // incoming : userId, accessToken, title, description, location, startTime, endTime} 
 	   // outgoing: success, eventId, error, accessToken
@@ -748,7 +850,7 @@ exports.setApp = function (app, client)
 		console.log(e.message);
 	}
 		  res.status(200).json(ret);
-	  });
+  });
 
   app.post('/api/viewCalendarEvent', async(req,res)=>{
 	  // incoming: userId, accessToken
@@ -884,105 +986,355 @@ exports.setApp = function (app, client)
 		  } 
 
 		  res.status(200).json(ret);
-	  });
+  });
   
   
   // Try to find Chrome/Chromium executable
-    async function updateGarages() {
-      const maxRetries = 3;
-      let retryCount = 0;
-      let browser;
+  /*
+  async function updateGarages() {
+    const maxRetries = 3;
+    let retryCount = 0;
+    let browser;
 
-      while (retryCount < maxRetries) {
-        try {
-          await client.connect();
-          const db = client.db('tokidatabase');
-          const collection = db.collection("parkinglocations");
+    while (retryCount < maxRetries) {
+      try {
+        await client.connect();
+        const db = client.db('tokidatabase');
+        const collection = db.collection("parkinglocations");
 
-          // Launch Puppeteer (bundled Chromium)
-          browser = await puppeteer.launch({
-            headless: true,
-            args: [
-              '--no-sandbox',
-              '--disable-setuid-sandbox',
-              '--disable-dev-shm-usage',
-              '--disable-gpu'
-            ]
-          });
+        // Launch Puppeteer (bundled Chromium)
+        browser = await puppeteer.launch({
+          headless: true,
+          args: [
+            '--no-sandbox',
+            '--disable-setuid-sandbox',
+            '--disable-dev-shm-usage',
+            '--disable-gpu'
+          ]
+        });
 
-          const page = await browser.newPage();
+        const page = await browser.newPage();
 
-          await page.setUserAgent('Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36');
+        await page.setUserAgent('Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36');
 
-          await page.goto('https://parking.ucf.edu/resources/garage-availability/', {
-            waitUntil: 'domcontentloaded',
-            timeout: 60000
-          });
+        await page.goto('https://parking.ucf.edu/resources/garage-availability/', {
+          waitUntil: 'domcontentloaded',
+          timeout: 60000
+        });
 
-          await page.waitForSelector('#OccupancyOutput tr', { timeout: 10000 });
+        await page.waitForSelector('#OccupancyOutput tr', { timeout: 10000 });
 
-          const garages = await page.evaluate(() => {
-            const rows = Array.from(document.querySelectorAll('#OccupancyOutput tr'));
-            return rows
-              .map(row => {
-                const cols = row.querySelectorAll('td');
-                if (cols.length >= 3) {
-                  const available = parseInt(cols[1].innerText.trim(), 10);
-                  const total = parseInt(cols[2].innerText.trim(), 10);
-                  return {
-                    garageName: cols[0].innerText.trim(),
-                    availableSpots: available,
-                    totalSpots: total,
-                    percentFull: total > 0 ? Math.round((1 - available/total) * 100) : null,
-                    lastUpdated: new Date(),
-                    updatedAt: new Date(),
-                    createdAt: new Date()
-                  };
-                }
-              })
-              .filter(Boolean);
-          });
+        const garages = await page.evaluate(() => {
+          const rows = Array.from(document.querySelectorAll('#OccupancyOutput tr'));
+          return rows
+            .map(row => {
+              const cols = row.querySelectorAll('td');
+              if (cols.length >= 3) {
+                const available = parseInt(cols[1].innerText.trim(), 10);
+                const total = parseInt(cols[2].innerText.trim(), 10);
+                return {
+                  garageName: cols[0].innerText.trim(),
+                  availableSpots: available,
+                  totalSpots: total,
+                  percentFull: total > 0 ? Math.round((1 - available/total) * 100) : null,
+                  lastUpdated: new Date(),
+                  updatedAt: new Date(),
+                  createdAt: new Date()
+                };
+              }
+            })
+            .filter(Boolean);
+        });
 
-          await browser.close();
+        await browser.close();
+        browser = null;
+
+        if (garages.length > 0) {
+          for (const garage of garages) {
+            await collection.updateOne(
+              { garageName: garage.garageName },
+              { $set: garage },
+              { upsert: true }
+            );
+          }
+          console.log(`[${new Date().toLocaleTimeString()}] Garage data updated:`, garages.length, "garages");
+        } else {
+          console.warn(`[${new Date().toLocaleTimeString()}] Warning: No garage data found`);
+        }
+
+        break;
+
+      } catch (err) {
+        retryCount++;
+        console.error(`Error scraping/updating garages (attempt ${retryCount}/${maxRetries}):`, err.message);
+
+        if (browser) {
+          try { await browser.close(); } catch {}
           browser = null;
+        }
 
-          if (garages.length > 0) {
-            for (const garage of garages) {
-              await collection.updateOne(
-                { garageName: garage.garageName },
-                { $set: garage },
-                { upsert: true }
-              );
-            }
-            console.log(`[${new Date().toLocaleTimeString()}] Garage data updated:`, garages.length, "garages");
-          } else {
-            console.warn(`[${new Date().toLocaleTimeString()}] Warning: No garage data found`);
-          }
-
-          break;
-
-        } catch (err) {
-          retryCount++;
-          console.error(`Error scraping/updating garages (attempt ${retryCount}/${maxRetries}):`, err.message);
-
-          if (browser) {
-            try { await browser.close(); } catch {}
-            browser = null;
-          }
-
-          if (retryCount < maxRetries) {
-            await new Promise(resolve => setTimeout(resolve, Math.pow(2, retryCount) * 1000));
-          } else {
-            console.error("Max retries reached. Will try again on next interval.");
-          }
+        if (retryCount < maxRetries) {
+          await new Promise(resolve => setTimeout(resolve, Math.pow(2, retryCount) * 1000));
+        } else {
+          console.error("Max retries reached. Will try again on next interval.");
         }
       }
     }
+  }
+  updateGarages();
+  setInterval(updateGarages, 2 * 60 * 1000);
+  */
 
-    updateGarages();
-    setInterval(updateGarages, 2 * 60 * 1000);
+// V2 to try
+  // Try to find Chrome/Chromium executable
+async function updateGarages() {
+  const maxRetries = 3;
+  let retryCount = 0;
+  let browser;
 
-  
+  while (retryCount < maxRetries) {
+    try {
+      await client.connect();
+      const db = client.db('tokidatabase');
+      const collection = db.collection("parkinglocations");
+
+      // Launch Puppeteer (bundled Chromium)
+      browser = await puppeteer.launch({
+        headless: true,
+        args: [
+          '--no-sandbox',
+          '--disable-setuid-sandbox',
+          '--disable-dev-shm-usage',
+          '--disable-gpu'
+        ]
+      });
+
+      const page = await browser.newPage();
+
+      await page.setUserAgent('Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36');
+
+      // Enable request interception to monitor for data updates
+      await page.setRequestInterception(true);
+      let dataRequestCompleted = false;
+      
+      page.on('request', request => {
+        request.continue();
+      });
+
+      page.on('response', async response => {
+        const url = response.url();
+        // Look for AJAX calls that might be updating the table
+        if (url.includes('garage') || url.includes('occupancy') || url.includes('parking')) {
+          console.log('Data request detected:', url);
+          dataRequestCompleted = true;
+        }
+      });
+
+      await page.goto('https://parking.ucf.edu/resources/garage-availability/', {
+        waitUntil: 'networkidle0', // Changed to networkidle0 for better reliability
+        timeout: 60000
+      });
+
+      await page.waitForSelector('#OccupancyOutput tr', { timeout: 10000 });
+
+      // Wait for any AJAX requests to complete
+      await new Promise(resolve => setTimeout(resolve, 5000));
+
+      // Try to detect if the table is still being updated by checking multiple times
+      let previousData = null;
+      let stableCount = 0;
+      const requiredStableChecks = 2;
+
+      while (stableCount < requiredStableChecks) {
+        const currentData = await page.evaluate(() => {
+          const rows = Array.from(document.querySelectorAll('#OccupancyOutput tr'));
+          return rows
+            .map(row => {
+              const cols = row.querySelectorAll('td');
+              if (cols.length >= 3) {
+                return {
+                  name: cols[0].innerText.trim(),
+                  available: parseInt(cols[1].innerText.trim(), 10),
+                  total: parseInt(cols[2].innerText.trim(), 10)
+                };
+              }
+            })
+            .filter(Boolean);
+        });
+
+        if (previousData && JSON.stringify(currentData) === JSON.stringify(previousData)) {
+          stableCount++;
+        } else {
+          stableCount = 0;
+        }
+
+        previousData = currentData;
+        
+        if (stableCount < requiredStableChecks) {
+          await new Promise(resolve => setTimeout(resolve, 2000));
+        }
+      }
+
+      // Now extract the final stable data
+      const garages = await page.evaluate(() => {
+        const rows = Array.from(document.querySelectorAll('#OccupancyOutput tr'));
+        return rows
+          .map(row => {
+            const cols = row.querySelectorAll('td');
+            if (cols.length >= 3) {
+              const available = parseInt(cols[1].innerText.trim(), 10);
+              const total = parseInt(cols[2].innerText.trim(), 10);
+              return {
+                garageName: cols[0].innerText.trim(),
+                availableSpots: available,
+                totalSpots: total,
+                percentFull: total > 0 ? Math.round((1 - available/total) * 100) : null,
+                lastUpdated: new Date(),
+                updatedAt: new Date(),
+                createdAt: new Date()
+              };
+            }
+          })
+          .filter(Boolean);
+      });
+
+      await browser.close();
+      browser = null;
+
+      if (garages.length > 0) {
+        console.log(`[${new Date().toLocaleTimeString()}] Scraped data:`, JSON.stringify(garages.map(g => ({
+          name: g.garageName,
+          avail: g.availableSpots,
+          total: g.totalSpots
+        })), null, 2));
+
+        for (const garage of garages) {
+          await collection.updateOne(
+            { garageName: garage.garageName },
+            { $set: garage },
+            { upsert: true }
+          );
+        }
+        console.log(`[${new Date().toLocaleTimeString()}] Garage data updated v2:`, garages.length, "garages");
+      } else {
+        console.warn(`[${new Date().toLocaleTimeString()}] Warning: No garage data found v2`);
+      }
+
+      break;
+
+    } catch (err) {
+      retryCount++;
+      console.error(`Error scraping/updating garages via v2 (attempt ${retryCount}/${maxRetries}):`, err.message);
+
+      if (browser) {
+        try { await browser.close(); } catch {}
+        browser = null;
+      }
+
+      if (retryCount < maxRetries) {
+        await new Promise(resolve => setTimeout(resolve, Math.pow(2, retryCount) * 1000));
+      } else {
+        console.error("Max retries reached. Will try again on next interval. v2");
+      }
+    }
+  }
+}
+
+updateGarages();
+setInterval(updateGarages, 2 * 60 * 1000); //*/
+
+
+app.post('/api/viewAPOD', async(req,res)=>{
+	  // incoming: userId, accessToken, taskId
+	  // outgoing: all tasks / single task, error
+    const {accessToken, date} = req.body;
+    let ret = {};
+	// validate JWT
+    try{
+	    if (token.isExpired(accessToken)){
+		    return res
+		      .status(200)
+		      .json({error: 'The JWT is no longer valid', accessToken: ''});
+	    }
+    }catch(e) {
+	    console.log(e.message);
+    }
+	  try{
+		  const db = client.db('tokidatabase');
+		  const apodsCollection = db.collection('apods');
+
+      const apod = await apodsCollection.findOne({
+        date: date,
+      });
+
+      if (!apod) {
+        return res.status(200).json({
+          success: false, 
+          error: 'No APOD found for this date',
+          accessToken
+        });
+      } 
+
+      const title = apod.title;
+      const hdurl = apod.hdurl;
+      const explanation = apod.explanation;
+      const thumbnailUrl = apod.thumbnailUrl;
+      const copyright = apod.copyright || null;
+
+
+	  ret = {success: true, title, hdurl, explanation, thumbnailUrl, copyright, error: '', accessToken};
+    }
+	  catch (e)
+    {
+		  ret = {success: false, error: e.toString()};
+	  }
+	  // Refresh JWT
+	  let refreshedToken = null;
+	  try {
+		  refreshedToken = token.refresh(accessToken);
+	  } catch (e){
+		  console.log(e.message);
+	  } 
+	  res.status(200).json(ret);
+  });
+
+async function updateAPOD() {
+  try {
+    const response = await fetch('https://api.nasa.gov/planetary/apod?api_key=50k2BOQgfXtPpguZO2BJCztlcCxqh1nG2fofFVBm');
+    const data = await response.json();
+    console.log(data);
+
+    const document = {
+    title: data.title,
+    date: data.date,
+    hdurl: data.hdurl,
+    explanation: data.explanation,
+    thumbnailUrl: data.url,
+    copyright: data.copyright || null,
+    createdAt: new Date(),
+    updatedAt: new Date()
+    };
+
+    await client.connect();
+    const db = client.db('tokidatabase');
+    const collection = db.collection("apods");
+
+    const existingAPOD = await collection.findOne({ date: data.date });
+    
+    if (existingAPOD) {
+      console.log(`APOD for date ${data.date} already exists. Skipping insert.`);
+      return { acknowledged: false, message: 'APOD already exists' };
+    }
+
+    const result = await collection.insertOne(document);
+    return result;
+  } catch (error) {
+    console.error('Error fetching NASA images:', error);
+  }
+}
+
+updateAPOD();
+setInterval(updateAPOD, 24 * 60 * 1000); 
 
 
 }
@@ -997,6 +1349,23 @@ function sendVerEmail(email, verificationToken)
     subject: "Your Verification Code",
     text: `Your verification code is: ${verificationToken}`,
     html: `<p>Your verification code is: <b>${verificationToken}</b></p>`,
+  };
+
+  sgMail
+    .send(msg)
+    .then(() => {console.log('Email sent')})
+    .catch((error) => {console.error(error)});
+}
+
+function sendTempPassEmail(email, tempPassword)
+{
+  const msg = 
+  {
+    to: email,
+    from: 'no-reply@mytoki.app',
+    subject: "Your Temporary Password",
+    text: `Your temporary password is: ${tempPassword} \nPlease login with this password and go to edit account to update it`,
+    html: `<p>Your temporary password is: <b>${tempPassword}</b>\nPlease login with this password and go to edit account to update it</p>`,
   };
 
   sgMail
