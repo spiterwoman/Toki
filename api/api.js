@@ -1279,10 +1279,10 @@ app.post('/api/viewAPOD', async(req,res)=>{
       const hdurl = apod.hdurl;
       const explanation = apod.explanation;
       const thumbnailUrl = apod.thumbnailUrl;
-      const copyright = apod.copyright || null,
+      const copyright = apod.copyright || null;
 
 
-			ret = {success: true, title, hdurl, explanation, thumbnailUrl, copyright , error: '', accessToken};
+	  ret = {success: true, title, hdurl, explanation, thumbnailUrl, copyright, error: '', accessToken};
     }
 	  catch (e)
     {
@@ -1376,3 +1376,4 @@ function sendTempPassEmail(email, tempPassword)
 
 
         
+
