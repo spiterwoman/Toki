@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import '../../core/widgets/page_shell.dart';
 import '../../core/widgets/glass_card.dart';
+import '../../core/api/api.dart';
 
 class SignupPage extends StatefulWidget {
   const SignupPage({super.key});
@@ -10,6 +11,33 @@ class SignupPage extends StatefulWidget {
 }
 
 class _SignupPageState extends State<SignupPage> {
+  //---API---
+  final api = Api('https://mytoki.app');
+
+  Future<void> _onSubmit() async {
+    if (!(_formKey.currentState?.validate() ?? false)) return;
+    try {
+      final res = await api.signup(
+        firstName: _nameCtrl.text.split(' ').first,
+        lastName: _nameCtrl.text.split(' ').skip(1).join(' '),
+        email: _emailCtrl.text.trim(),
+        password: _pwCtrl.text,
+      );
+      final err = (res['error'] ?? '').toString();
+      if (err.contains('success')) {
+        Navigator.of(context).pushNamed('/login');
+      } else {
+        _showSnack(err.isEmpty ? 'Signup failed' : err);
+      }
+    } catch (e) {
+      _showSnack('Signup error: $e');
+    }
+  }
+
+  void _showSnack(String msg) {
+    ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(msg)));
+  }
+
   final _formKey = GlobalKey<FormState>();
   final _nameCtrl = TextEditingController();
   final _emailCtrl = TextEditingController();
@@ -23,12 +51,6 @@ class _SignupPageState extends State<SignupPage> {
     _pwCtrl.dispose();
     _pw2Ctrl.dispose();
     super.dispose();
-  }
-
-  void _onSubmit() {
-    if (!(_formKey.currentState?.validate() ?? false)) return;
-    // TODO: Hook up to real auth later
-    Navigator.of(context).pushNamed('/verify');
   }
 
   @override
@@ -135,7 +157,10 @@ class _SignupBody extends StatelessWidget {
                   const SizedBox(height: 14),
 
                   ElevatedButton(
+                    //===================Testing=================
+                    // Replace onPressed with the _onSubmit call once APIs are running
                     onPressed: state._onSubmit,
+                    //onPressed: () => Navigator.of(context).pushNamed('/verify'),
                     child: const Text('Sign up'),
                   ),
                   const SizedBox(height: 12),

@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import '../../core/widgets/page_shell.dart';
 import '../../core/widgets/glass_card.dart';
+import '../../core/api/api.dart';
 
 class LoginPage extends StatefulWidget {
   const LoginPage({super.key});
@@ -10,6 +11,37 @@ class LoginPage extends StatefulWidget {
 }
 
 class _LoginPageState extends State<LoginPage> {
+  final api = Api('https://mytoki.app'); //ENV THIS BEFORE PUKSH
+
+  Future<void> _onSubmit() async {
+    if (!(_formKey.currentState?.validate() ?? false)) return;
+
+    try {
+      final res = await api.login(
+        email: _emailCtrl.text.trim(),
+        password: _pwCtrl.text,
+      );
+      final err = (res['error'] ?? '').toString();
+
+      if (err.contains('send to verify page')) {
+        // server also sent verificationToken
+        Navigator.of(context).pushNamed('/verify', arguments: {
+          'email': _emailCtrl.text.trim(),
+          'verificationToken': res['verificationToken'],
+        });
+      } else if (err == 'none' || err == '' || err.contains('success')) {
+        Navigator.of(context).pushNamed('/home');
+      } else {
+        _showSnack(err);
+      }
+    } catch (e) {
+      _showSnack('Login failed: $e');
+    }
+  }
+
+  void _showSnack(String msg) {
+    ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(msg)));
+  }
   final _formKey = GlobalKey<FormState>();
   final _emailCtrl = TextEditingController();
   final _pwCtrl = TextEditingController();
@@ -19,13 +51,6 @@ class _LoginPageState extends State<LoginPage> {
     _emailCtrl.dispose();
     _pwCtrl.dispose();
     super.dispose();
-  }
-
-  void _onSubmit() {
-    if (_formKey.currentState?.validate() ?? false) {
-      // TODO: hook to real auth later
-      Navigator.of(context).pushNamed('/verify');
-    }
   }
 
   @override
@@ -100,7 +125,10 @@ class _LoginBody extends StatelessWidget {
                   const SizedBox(height: 14),
 
                   ElevatedButton(
+                    //================Testing==========================
+                    // Replace onPressed with the _onSubmit call once APIs are running
                     onPressed: state._onSubmit,
+                    //onPressed: () => Navigator.of(context).pushNamed('/verify'),
                     child: const Text('Log In'),
                   ),
                   const SizedBox(height: 12),

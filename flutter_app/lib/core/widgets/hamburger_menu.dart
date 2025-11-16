@@ -8,7 +8,7 @@ class HamburgerMenu extends StatelessWidget {
   const HamburgerMenu({super.key, required this.open, required this.onClose});
 
   static const _items = [
-    ('Daily Summary', '/daily-summary'),
+    ('Daily Summary', '/daily'),
     ('Calendar', '/calendar'),
     ('Tasks', '/tasks'),
     ('Reminders', '/reminders'),
