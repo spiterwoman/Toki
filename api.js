@@ -1336,6 +1336,65 @@ async function updateAPOD() {
 updateAPOD();
 setInterval(updateAPOD, 24 * 60 * 1000); 
 
+// Get recent APOD documents
+app.post('/api/recentAPODs', async (req, res) => {
+  const { accessToken, limit } = req.body;
+  let ret = {};
+
+  try {
+    if (token.isExpired(accessToken)) {
+      return res
+        .status(200)
+        .json({ error: 'The JWT is no longer valid', accessToken: '' });
+    }
+  } catch (e) {
+    console.log(e.message);
+  }
+
+  try {
+    const db = client.db('tokidatabase');
+    const apodsCollection = db.collection('apods');
+
+    // how many to fetch (default 3, cap at 10 just in case)
+    const n =
+      typeof limit === 'number' && limit > 0 && limit <= 10 ? limit : 3;
+      
+    const docs = await apodsCollection
+      .find({})
+      .sort({ date: -1 }) // date is "YYYY-MM-DD" string, so this sorts newest first
+      .limit(n)
+      .project({
+        _id: 0,
+        title: 1,
+        date: 1,
+        hdurl: 1,
+        thumbnailUrl: 1,
+        explanation: 1,
+        copyright: 1,
+      })
+      .toArray();
+
+    ret = {
+      success: true,
+      photos: docs,
+      error: '',
+      accessToken,
+    };
+  } catch (e) {
+    ret = { success: false, error: e.toString() };
+  }
+
+  // refresh token (same pattern as other routes)
+  let refreshedToken = null;
+  try {
+    refreshedToken = token.refresh(accessToken);
+  } catch (e) {
+    console.log(e.message);
+  }
+
+  res.status(200).json(ret);
+});
+
 
 }
   
