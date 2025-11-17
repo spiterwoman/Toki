@@ -17,10 +17,15 @@ class _NasaPhotoPageState extends State<NasaPhotoPage> {
   bool _loading = true;
   String? _error;
 
+  List<_RecentPhoto> _recent = [];
+  String? _recentError;
+  bool _recentLoading = true;
+
   @override
   void initState() {
     super.initState();
     _loadApodForToday();
+    _loadRecentApods();
   }
 
   String _formatHumanDate(DateTime d) {
@@ -81,6 +86,43 @@ class _NasaPhotoPageState extends State<NasaPhotoPage> {
       setState(() {
         _error = e.toString();
         _loading = false;
+      });
+    }
+  }
+
+  Future<void> _loadRecentApods() async {
+    setState(() {
+      _recentLoading = true;
+      _recentError = null;
+    });
+
+    try {
+      final photos = await api.fetchRecentApods(limit: 6);
+
+      final items = photos.map((p) {
+        final dateStr = (p['date'] as String?) ?? '';
+        // keep the original YYYY-MM-DD but you could prettify it
+        final title = (p['title'] as String?) ?? 'Untitled';
+        final thumb = (p['thumbnailUrl'] as String?) ??
+            (p['url'] as String?) ??
+            '';
+
+        return _RecentPhoto(
+          id: dateStr.hashCode, // simple stable-ish id
+          title: title,
+          date: dateStr,
+          thumbnail: thumb,
+        );
+      }).toList();
+
+      setState(() {
+        _recent = items;
+        _recentLoading = false;
+      });
+    } catch (e) {
+      setState(() {
+        _recentError = e.toString();
+        _recentLoading = false;
       });
     }
   }
@@ -296,33 +338,54 @@ class _NasaPhotoPageState extends State<NasaPhotoPage> {
                       ),
                     ),
                     const SizedBox(height: 8),
-                    LayoutBuilder(
-                      builder: (context, constraints) {
-                        int crossAxisCount = 1;
-                        if (constraints.maxWidth > 700) {
-                          crossAxisCount = 3;
-                        } else if (constraints.maxWidth > 450) {
-                          crossAxisCount = 2;
-                        }
 
-                        return GridView.builder(
-                          shrinkWrap: true,
-                          physics: const NeverScrollableScrollPhysics(),
-                          itemCount: recentPhotos.length,
-                          gridDelegate:
-                              SliverGridDelegateWithFixedCrossAxisCount(
-                            crossAxisCount: crossAxisCount,
-                            mainAxisSpacing: 12,
-                            crossAxisSpacing: 12,
-                            childAspectRatio: 16 / 13,
-                          ),
-                          itemBuilder: (context, index) {
-                            final photo = recentPhotos[index];
-                            return _RecentPhotoCard(photo: photo);
-                          },
-                        );
-                      },
-                    ),
+                    if (_recentLoading)
+                      const Center(
+                        child: Padding(
+                          padding: EdgeInsets.all(8.0),
+                          child: CircularProgressIndicator(),
+                        ),
+                      )
+                    else if (_recentError != null)
+                      Text(
+                        _recentError!,
+                        style: const TextStyle(color: Colors.redAccent),
+                      )
+                    else if (_recent.isEmpty)
+                      const Text(
+                        'No recent photos found.',
+                        style: TextStyle(
+                          color: Color.fromRGBO(255, 255, 255, 0.6),
+                        ),
+                      )
+                    else
+                      LayoutBuilder(
+                        builder: (context, constraints) {
+                          int crossAxisCount = 1;
+                          if (constraints.maxWidth > 700) {
+                            crossAxisCount = 3;
+                          } else if (constraints.maxWidth > 450) {
+                            crossAxisCount = 2;
+                          }
+
+                          return GridView.builder(
+                            shrinkWrap: true,
+                            physics: const NeverScrollableScrollPhysics(),
+                            itemCount: _recent.length,
+                            gridDelegate:
+                                SliverGridDelegateWithFixedCrossAxisCount(
+                              crossAxisCount: crossAxisCount,
+                              mainAxisSpacing: 12,
+                              crossAxisSpacing: 12,
+                              childAspectRatio: 16 / 13,
+                            ),
+                            itemBuilder: (context, index) {
+                              final photo = _recent[index];
+                              return _RecentPhotoCard(photo: photo);
+                            },
+                          );
+                        },
+                      ),
                   ],
                 ),
               ),
@@ -365,31 +428,6 @@ class _RecentPhoto {
     required this.thumbnail,
   });
 }
-
-// Recent mock thumbnails (unchanged)
-const recentPhotos = <_RecentPhoto>[
-  _RecentPhoto(
-    id: 1,
-    title: 'Jupiter\'s Great Red Spot',
-    date: 'Oct 8, 2025',
-    thumbnail:
-        'https://images.unsplash.com/photo-1614732484003-ef9881555dc3?w=400',
-  ),
-  _RecentPhoto(
-    id: 2,
-    title: 'Andromeda Galaxy',
-    date: 'Oct 7, 2025',
-    thumbnail:
-        'https://images.unsplash.com/photo-1543722530-d2c3201371e7?w=400',
-  ),
-  _RecentPhoto(
-    id: 3,
-    title: 'Saturn\'s Rings',
-    date: 'Oct 6, 2025',
-    thumbnail:
-        'https://images.unsplash.com/photo-1614313913007-2b4ae8ce32d6?w=400',
-  ),
-];
 
 // ===== recent photo card ===============================================
 

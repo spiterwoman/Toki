@@ -200,4 +200,73 @@ class Api {
       throw Exception('Unexpected error: $e');
     }
   }
+
+  // ---- NASA APOD: Recent photos ----
+
+  /// Fetch the most recent APOD entries from the backend.
+  ///
+  /// Backend route: POST /api/recentAPODs
+  /// Body: { accessToken, limit }
+  ///
+  /// Expected response:
+  /// {
+  ///   success: true,
+  ///   photos: [
+  ///     {
+  ///       "date": "2025-11-16",
+  ///       "title": "...",
+  ///       "thumbnailUrl": "...",
+  ///       "hdurl": "...",
+  ///       "explanation": "...",
+  ///       "copyright": "..."
+  ///     },
+  ///     ...
+  ///   ],
+  ///   error: "",
+  ///   accessToken: "..."
+  /// }
+  Future<List<Map<String, dynamic>>> fetchRecentApods({
+    int limit = 6,
+  }) async {
+    final accessToken = await _store.read(key: 'accessToken');
+    if (accessToken == null) {
+      throw Exception('No access token found. User may not be logged in.');
+    }
+
+    try {
+      final response = await _dio.post(
+        '/api/recentAPODs',
+        data: {
+          'accessToken': accessToken,
+          'limit': limit,
+        },
+      );
+
+      final map = Map<String, dynamic>.from(response.data);
+
+      if (map['success'] != true) {
+        final err = map['error'] ?? 'Failed to fetch recent APODs.';
+        throw Exception(err.toString());
+      }
+
+      final photosRaw = map['photos'] ?? [];
+      final photos = List<Map<String, dynamic>>.from(
+        (photosRaw as List).map(
+          (p) => Map<String, dynamic>.from(p as Map),
+        ),
+      );
+
+      return photos;
+    } on DioException catch (e) {
+      if (e.response != null) {
+        throw Exception(
+          'Server error: ${e.response?.statusCode} ${e.response?.data}',
+        );
+      } else {
+        throw Exception('Network error: ${e.message}');
+      }
+    } catch (e) {
+      throw Exception('Unexpected error: $e');
+    }
+  }
 }

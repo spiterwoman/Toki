@@ -1308,6 +1308,7 @@ async function updateAPOD() {
     title: data.title,
     date: data.date,
     hdurl: data.hdurl,
+    url: data.url,
     explanation: data.explanation,
     thumbnailUrl: data.url,
     copyright: data.copyright || null,
@@ -1358,7 +1359,7 @@ app.post('/api/recentAPODs', async (req, res) => {
     // how many to fetch (default 3, cap at 10 just in case)
     const n =
       typeof limit === 'number' && limit > 0 && limit <= 10 ? limit : 3;
-      
+
     const docs = await apodsCollection
       .find({})
       .sort({ date: -1 }) // date is "YYYY-MM-DD" string, so this sorts newest first
@@ -1368,6 +1369,7 @@ app.post('/api/recentAPODs', async (req, res) => {
         title: 1,
         date: 1,
         hdurl: 1,
+        url: 1,
         thumbnailUrl: 1,
         explanation: 1,
         copyright: 1,
