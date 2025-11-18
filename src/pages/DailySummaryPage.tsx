@@ -43,7 +43,7 @@ export default function DailySummaryPage() {
   const nasaLoaded = nasaPhoto !== '';
 
   return (
-    <PageShell title= "Good Morning, Astronaut" subtitle={date || 'Loading date...'}>
+    <PageShell title= "Hello, Astronaut" subtitle={date || 'Loading date...'}>
       <div className="vstack" style={{ gap: 24, paddingTop: 24 }}>
 
         <div className="vstack" style={{ gap: 24 }}>
@@ -105,7 +105,7 @@ export default function DailySummaryPage() {
                   ))}  
                 </div> 
               ) : (
-                <div style={{ color: 'rgba(255,255,255,0.6)' }}>No tasks for today.</div>
+                <div style={{ color: 'rgba(255,255,255,0.6)' }}>No tasks yet.</div>
               )} 
             </GlassCard>  
 
@@ -129,7 +129,7 @@ export default function DailySummaryPage() {
                   ))}  
                 </div>  
               ) : (
-                <div style={{ color: 'rgba(255,255,255,0.6)', marginTop: 12 }}>No events for today.</div>
+                <div style={{ color: 'rgba(255,255,255,0.6)', marginTop: 12 }}>No events today.</div>
               )}
             </GlassCard>  
           </div>
@@ -159,7 +159,7 @@ export default function DailySummaryPage() {
                   ))}  
                 </div>
               ) : (
-                <div style={{ color: 'rgba(255,255,255,0.6)', marginTop: 12 }}>No reminders for today.</div>
+                <div style={{ color: 'rgba(255,255,255,0.6)', marginTop: 12 }}>No active reminders.</div>
               )}  
             </GlassCard>  
 

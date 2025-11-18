@@ -6,6 +6,7 @@ import GlassCard from '../components/GlassCard';
 export default function WeatherPage() {
 
   const [weather, setWeather] = useState({
+    location: '',
     emoji: '',
     condition: '',
     temperature: null,
@@ -36,7 +37,7 @@ export default function WeatherPage() {
         `}
       </style>
 
-      <PageShell title="Weather" subtitle="Orlando, Florida"> {/* location? */}
+      <PageShell title="Weather" subtitle={weather.location || 'Loading location...'}>
         <div className="vstack" style={{ gap: 24, paddingTop: 24 }}>
           <div className="vstack" style={{ gap: 24 }}>
             {/* CURRENT WEATHER */}
