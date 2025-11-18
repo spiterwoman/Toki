@@ -38,12 +38,21 @@ export default function LoginPage() {
       setLoading(true);
       setStatus("Signing you in...");
 
+      console.log("something");
+
       const res = await fetch("/api/loginUser", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ email: trimmedEmail, password: trimmedPassword }),
         credentials: "include",
       });
+
+      
+console.log("HTTP Status:", res.status);
+console.log("res.ok:", res.ok);
+const text = await res.text();
+console.log("Raw response body:", text);
+
 
       if (!res.ok) {
         let message = "Login failed. Please check your email or password.";
@@ -58,11 +67,6 @@ export default function LoginPage() {
       }
 
       const data = await res.json();
-      const ok = data?.success === true || !!data?.token;
-      if (!ok) {
-        setStatus(data?.message ?? "Login failed. Please check your email or password.");
-        return;
-      }
       if (data?.token) {
         localStorage.setItem("toki-auth-token", data.token);
       }
