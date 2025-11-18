@@ -1,6 +1,11 @@
 import 'package:flutter/material.dart';
+
 import '../../core/widgets/page_shell.dart';
 import '../../core/widgets/glass_card.dart';
+import '../../core/api/api.dart';
+
+// Reuse the same Api instance pattern as elsewhere
+final api = Api('https://mytoki.app');
 
 class DailySummaryPage extends StatefulWidget {
   const DailySummaryPage({super.key});
@@ -10,8 +15,7 @@ class DailySummaryPage extends StatefulWidget {
 }
 
 class _DailySummaryPageState extends State<DailySummaryPage> {
-  final String _date = 'Thursday, October 9, 2025';
-
+  // Weather is still static for now
   final _weather = const {
     'emoji': '☀️',
     'condition': 'Sunny',
@@ -21,61 +25,288 @@ class _DailySummaryPageState extends State<DailySummaryPage> {
     'sunset': '7:45 PM',
   };
 
-  late List<_Task> _tasks;
+  // State from backend
+  List<_Task> _tasks = [];
+  List<_Event> _events = []; // today's calendar events
+  List<_Reminder> _reminders = [];
 
-  final List<_Event> _events = const [
-    _Event(
-      id: 1,
-      title: 'Product Launch',
-      time: '2:00 PM',
-      location: 'Conference Room A',
-    ),
-    _Event(
-      id: 2,
-      title: 'Design Review',
-      time: '4:00 PM',
-      location: 'Virtual',
-    ),
-  ];
+  // NASA APOD for today
+  String? _nasaPhotoUrl;
+  String? _nasaTitle;
+  String? _nasaExplanation;
 
-  final List<_Reminder> _reminders = const [
-    _Reminder(id: 1, text: 'Submit expense report'),
-    _Reminder(id: 2, text: 'Call dentist for appointment'),
-    _Reminder(id: 3, text: 'Pick up dry cleaning'),
-  ];
-
-  final String _nasaPhotoUrl =
-      'https://images.unsplash.com/photo-1642635715930-b3a1eba9c99f?crop=entropy&cs=tinysrgb&fit=max&fm=jpg&ixid=M3w3Nzg4Nzd8MHwxfHNlYXJjaHwxfHxzcGFjZSUyMHN0YXJzJTIwbmVidWxhfGVufDF8fHx8MTc1OTk3OTAxMXww&ixlib=rb-4.1.0&q=80&w=1080';
+  bool _loading = false;
+  String? _error;
 
   @override
   void initState() {
     super.initState();
-    _tasks = [
-      const _Task(
-        id: 1,
-        title: 'Team standup meeting',
-        time: '9:00 AM',
-        priority: TaskPriority.high,
-        completed: true,
-      ),
-      const _Task(
-        id: 2,
-        title: 'Review project proposal',
-        time: '11:00 AM',
-        priority: TaskPriority.high,
-        completed: false,
-      ),
-      const _Task(
-        id: 3,
-        title: 'Lunch with Sarah',
-        time: '12:30 PM',
-        priority: TaskPriority.medium,
-        completed: false,
-      ),
-    ];
+    _loadAll();
   }
 
-  void _toggleTask(int id) {
+  // ====== loaders =======================================================
+
+  Future<void> _loadAll() async {
+    setState(() {
+      _loading = true;
+      _error = null;
+    });
+
+    try {
+      await Future.wait([
+        _loadTasksFromServer(),
+        _loadRemindersFromServer(),
+        _loadCalendarEventsFromServer(),
+        _loadNasaPhotoFromServer(),
+      ]);
+
+      if (!mounted) return;
+      setState(() {
+        _loading = false;
+      });
+    } catch (e) {
+      if (!mounted) return;
+      setState(() {
+        _loading = false;
+        _error = e.toString();
+      });
+    }
+  }
+
+  bool _sameDay(DateTime a, DateTime b) =>
+      a.year == b.year && a.month == b.month && a.day == b.day;
+
+  // ---- Tasks: /api/viewTask --------------------------------------------
+
+  Future<void> _loadTasksFromServer() async {
+    try {
+      // assuming your api.dart defined: Future<Map<String,dynamic>> viewTasks({String? taskId})
+      final res = await api.viewTasks(); // no taskId => all tasks
+
+      if (res['success'] == true) {
+        final list = (res['tasks'] as List?) ?? [];
+        final today = DateTime.now();
+
+        final tasks = <_Task>[];
+
+        for (final raw in list) {
+          final m = Map<String, dynamic>.from(raw as Map);
+
+          final id = m['_id']?.toString() ?? '';
+          final title = m['title'] as String? ?? '';
+
+          // Parse dueDate if present
+          DateTime? due;
+          final dueRaw = m['dueDate'];
+          if (dueRaw != null) {
+            try {
+              due = DateTime.parse(dueRaw.toString());
+            } catch (_) {}
+          }
+
+          // Only show tasks due today (if dueDate is non-null)
+          if (due == null || !_sameDay(due, today)) continue;
+
+          // Build time string if due has a time component
+          String timeStr = 'Today';
+          if (due.hour != 0 || due.minute != 0) {
+            final hour12 = (due.hour % 12 == 0) ? 12 : due.hour % 12;
+            final ampm = due.hour < 12 ? 'AM' : 'PM';
+            timeStr = '$hour12:${due.minute.toString().padLeft(2, '0')} $ampm';
+          }
+
+          // Priority string -> enum
+          TaskPriority priority = TaskPriority.medium;
+          final p = (m['priority'] as String?)?.toLowerCase();
+          if (p == 'low') {
+            priority = TaskPriority.low;
+          } else if (p == 'high') {
+            priority = TaskPriority.high;
+          }
+
+          // completed object: { isCompleted: bool, completedAt: ... }
+          bool completed = false;
+          final completedRaw = m['completed'];
+          if (completedRaw is Map && completedRaw['isCompleted'] == true) {
+            completed = true;
+          }
+
+          tasks.add(
+            _Task(
+              id: id,
+              title: title,
+              time: timeStr,
+              priority: priority,
+              completed: completed,
+            ),
+          );
+        }
+
+        if (!mounted) return;
+        setState(() {
+          _tasks = tasks;
+        });
+      } else {
+        if (!mounted) return;
+        setState(() {
+          _error ??= res['error']?.toString() ?? 'Failed to load tasks.';
+        });
+      }
+    } catch (e) {
+      if (!mounted) return;
+      setState(() {
+        _error ??= e.toString();
+      });
+    }
+  }
+
+  // ---- Reminders: /api/viewReminder ------------------------------------
+
+  Future<void> _loadRemindersFromServer() async {
+    try {
+      final res = await api.viewReminders(); // no reminderId => all reminders
+
+      if (res['success'] == true) {
+        final list = (res['reminders'] as List?) ?? [];
+
+        final reminders = list.map((raw) {
+          final m = Map<String, dynamic>.from(raw as Map);
+          return _Reminder.fromJson(m);
+        }).toList();
+
+        if (!mounted) return;
+        setState(() {
+          _reminders = reminders;
+        });
+      } else {
+        if (!mounted) return;
+        setState(() {
+          _error ??=
+              res['error']?.toString() ?? 'Failed to load reminders.';
+        });
+      }
+    } catch (e) {
+      if (!mounted) return;
+      setState(() {
+        _error ??= e.toString();
+      });
+    }
+  }
+
+  // ---- Calendar: /api/viewCalendarEvent (today only) -------------------
+
+  Future<void> _loadCalendarEventsFromServer() async {
+    try {
+      final res = await api.viewCalendarEvents(); // all events
+
+      if (res['success'] == true) {
+        final list = (res['events'] as List?) ?? [];
+        final today = DateTime.now();
+
+        final events = <_Event>[];
+
+        for (final raw in list) {
+          final m = Map<String, dynamic>.from(raw as Map);
+
+          final id = m['_id']?.toString() ?? '';
+          final title = m['title'] as String? ?? '';
+          final location = m['location'] as String? ?? 'No location';
+
+          DateTime? start;
+          final startRaw = m['startDate'];
+          if (startRaw != null) {
+            try {
+              start = DateTime.parse(startRaw.toString());
+            } catch (_) {}
+          }
+          if (start == null) continue;
+
+          // Only events happening today
+          if (!_sameDay(start, today)) continue;
+
+          String timeStr = 'All day';
+          if (start.hour != 0 || start.minute != 0) {
+            final hour12 = (start.hour % 12 == 0) ? 12 : start.hour % 12;
+            final ampm = start.hour < 12 ? 'AM' : 'PM';
+            timeStr =
+                '$hour12:${start.minute.toString().padLeft(2, '0')} $ampm';
+          }
+
+          events.add(
+            _Event(
+              id: id,
+              title: title,
+              start: start,
+              time: timeStr,
+              location: location,
+            ),
+          );
+        }
+
+        // Sort by start time
+        events.sort((a, b) => a.start.compareTo(b.start));
+
+        if (!mounted) return;
+        setState(() {
+          _events = events;
+        });
+      } else {
+        if (!mounted) return;
+        setState(() {
+          _error ??=
+              res['error']?.toString() ?? 'Failed to load calendar events.';
+        });
+      }
+    } catch (e) {
+      if (!mounted) return;
+      setState(() {
+        _error ??= e.toString();
+      });
+    }
+  }
+
+  // ---- NASA APOD: /api/viewAPOD ---------------------------------------
+
+  Future<void> _loadNasaPhotoFromServer() async {
+    try {
+      final today = DateTime.now();
+      final res = await api.viewApod(date: today);
+
+      if (res['success'] == true) {
+        final hd = res['hdurl'] as String?;
+        final thumb = res['thumbnailUrl'] as String?;
+        final title = res['title'] as String?;
+        final explanation = res['explanation'] as String?;
+
+        if (!mounted) return;
+        setState(() {
+          _nasaPhotoUrl = hd ?? thumb;
+          _nasaTitle = title?.isNotEmpty == true
+              ? title
+              : 'NASA Astronomy Picture of the Day';
+          _nasaExplanation = explanation;
+        });
+      } else {
+        if (!mounted) return;
+        setState(() {
+          _nasaPhotoUrl = null;
+          _nasaTitle = 'NASA Astronomy Picture of the Day';
+          _nasaExplanation =
+              res['error']?.toString() ?? 'Unable to load APOD.';
+        });
+      }
+    } catch (e) {
+      if (!mounted) return;
+      setState(() {
+        _nasaPhotoUrl = null;
+        _nasaTitle = 'NASA Astronomy Picture of the Day';
+        _nasaExplanation = e.toString();
+      });
+    }
+  }
+
+  // Local toggle (UI only) for the checkboxes
+  void _toggleTask(String id) {
     setState(() {
       _tasks = _tasks
           .map((t) =>
@@ -84,18 +315,36 @@ class _DailySummaryPageState extends State<DailySummaryPage> {
     });
   }
 
+  // ===== UI =============================================================
+
   @override
   Widget build(BuildContext context) {
     final isSmallScreen = MediaQuery.of(context).size.width < 1024;
+    final todayLabel =
+        MaterialLocalizations.of(context).formatFullDate(DateTime.now());
 
     return PageShell(
       title: 'Good Morning, Astronaut',
-      subtitle: _date,
+      subtitle: todayLabel,
       child: SingleChildScrollView(
         padding: const EdgeInsets.all(24),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
+            if (_error != null)
+              Padding(
+                padding: const EdgeInsets.only(bottom: 8),
+                child: Text(
+                  _error!,
+                  style: const TextStyle(color: Colors.redAccent),
+                ),
+              ),
+            if (_loading)
+              const Padding(
+                padding: EdgeInsets.only(bottom: 8),
+                child: Center(child: CircularProgressIndicator()),
+              ),
+
             // Top grid: Weather / Tasks / Events
             LayoutBuilder(
               builder: (context, constraints) {
@@ -150,7 +399,7 @@ class _DailySummaryPageState extends State<DailySummaryPage> {
     );
   }
 
-  // ===== cards =========================================================
+  // ===== cards ==========================================================
 
   Widget _buildWeatherCard(BuildContext context) {
     return GlassCard(
@@ -161,7 +410,6 @@ class _DailySummaryPageState extends State<DailySummaryPage> {
           children: [
             Row(
               children: [
-                // swap Icons with your lucide assets if you already wired them
                 Icon(Icons.cloud, color: Colors.lightBlue[300], size: 20),
                 const SizedBox(width: 8),
                 const Text(
@@ -258,50 +506,62 @@ class _DailySummaryPageState extends State<DailySummaryPage> {
               ],
             ),
             const SizedBox(height: 12),
-            Column(
-              children: _tasks.map((t) {
-                final titleStyle = TextStyle(
-                  fontWeight: FontWeight.w600,
-                  decoration:
-                      t.completed ? TextDecoration.lineThrough : null,
-                  color: t.completed
-                      ? Colors.white.withOpacity(0.5)
-                      : Colors.white,
-                );
-                final timeStyle = TextStyle(
-                  color: Colors.grey.withOpacity(t.completed ? 0.5 : 1.0),
-                );
+            if (_tasks.isEmpty)
+              Text(
+                'No tasks due today.',
+                style: TextStyle(
+                  color: Theme.of(context)
+                      .textTheme
+                      .bodySmall
+                      ?.color
+                      ?.withOpacity(0.7),
+                ),
+              )
+            else
+              Column(
+                children: _tasks.map((t) {
+                  final titleStyle = TextStyle(
+                    fontWeight: FontWeight.w600,
+                    decoration:
+                        t.completed ? TextDecoration.lineThrough : null,
+                    color: t.completed
+                        ? Colors.white.withOpacity(0.5)
+                        : Colors.white,
+                  );
+                  final timeStyle = TextStyle(
+                    color: Colors.grey.withOpacity(t.completed ? 0.5 : 1.0),
+                  );
 
-                return Padding(
-                  key: ValueKey(t.id),
-                  padding: const EdgeInsets.symmetric(vertical: 8),
-                  child: Row(
-                    children: [
-                      Expanded(
-                        child: Row(
-                          children: [
-                            Checkbox(
-                              value: t.completed,
-                              onChanged: (_) => _toggleTask(t.id),
-                            ),
-                            const SizedBox(width: 8),
-                            Column(
-                              crossAxisAlignment: CrossAxisAlignment.start,
-                              children: [
-                                Text(t.title, style: titleStyle),
-                                const SizedBox(height: 4),
-                                Text(t.time, style: timeStyle),
-                              ],
-                            ),
-                          ],
+                  return Padding(
+                    key: ValueKey(t.id),
+                    padding: const EdgeInsets.symmetric(vertical: 8),
+                    child: Row(
+                      children: [
+                        Expanded(
+                          child: Row(
+                            children: [
+                              Checkbox(
+                                value: t.completed,
+                                onChanged: (_) => _toggleTask(t.id),
+                              ),
+                              const SizedBox(width: 8),
+                              Column(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [
+                                  Text(t.title, style: titleStyle),
+                                  const SizedBox(height: 4),
+                                  Text(t.time, style: timeStyle),
+                                ],
+                              ),
+                            ],
+                          ),
                         ),
-                      ),
-                      _buildPriorityBadge(t.priority),
-                    ],
-                  ),
-                );
-              }).toList(),
-            ),
+                        _buildPriorityBadge(t.priority),
+                      ],
+                    ),
+                  );
+                }).toList(),
+              ),
           ],
         ),
       ),
@@ -326,46 +586,58 @@ class _DailySummaryPageState extends State<DailySummaryPage> {
               ],
             ),
             const SizedBox(height: 12),
-            Column(
-              children: _events.map((e) {
-                return Container(
-                  key: ValueKey(e.id),
-                  padding: const EdgeInsets.all(16),
-                  margin: const EdgeInsets.only(bottom: 12),
-                  decoration: BoxDecoration(
-                    borderRadius: BorderRadius.circular(12),
-                    color: Colors.white.withOpacity(0.03),
-                  ),
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Text(
-                        e.title,
-                        style: const TextStyle(
-                          fontSize: 16,
-                          fontWeight: FontWeight.w500,
+            if (_events.isEmpty)
+              Text(
+                'No events today.',
+                style: TextStyle(
+                  color: Theme.of(context)
+                      .textTheme
+                      .bodySmall
+                      ?.color
+                      ?.withOpacity(0.7),
+                ),
+              )
+            else
+              Column(
+                children: _events.map((e) {
+                  return Container(
+                    key: ValueKey(e.id),
+                    padding: const EdgeInsets.all(16),
+                    margin: const EdgeInsets.only(bottom: 12),
+                    decoration: BoxDecoration(
+                      borderRadius: BorderRadius.circular(12),
+                      color: Colors.white.withOpacity(0.03),
+                    ),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          e.title,
+                          style: const TextStyle(
+                            fontSize: 16,
+                            fontWeight: FontWeight.w500,
+                          ),
                         ),
-                      ),
-                      const SizedBox(height: 4),
-                      Text(
-                        e.time,
-                        style: const TextStyle(
-                          fontSize: 14,
-                          color: Colors.grey,
+                        const SizedBox(height: 4),
+                        Text(
+                          e.time,
+                          style: const TextStyle(
+                            fontSize: 14,
+                            color: Colors.grey,
+                          ),
                         ),
-                      ),
-                      Text(
-                        e.location,
-                        style: const TextStyle(
-                          fontSize: 14,
-                          color: Colors.grey,
+                        Text(
+                          e.location,
+                          style: const TextStyle(
+                            fontSize: 14,
+                            color: Colors.grey,
+                          ),
                         ),
-                      ),
-                    ],
-                  ),
-                );
-              }).toList(),
-            ),
+                      ],
+                    ),
+                  );
+                }).toList(),
+              ),
           ],
         ),
       ),
@@ -390,28 +662,48 @@ class _DailySummaryPageState extends State<DailySummaryPage> {
               ],
             ),
             const SizedBox(height: 12),
-            Column(
-              children: _reminders.map((r) {
-                return Padding(
-                  key: ValueKey(r.id),
-                  padding: const EdgeInsets.symmetric(vertical: 8.0),
-                  child: Row(
-                    children: [
-                      Container(
-                        width: 8,
-                        height: 8,
-                        margin: const EdgeInsets.only(right: 8),
-                        decoration: BoxDecoration(
-                          color: Colors.yellow[400],
-                          shape: BoxShape.circle,
+            if (_reminders.isEmpty)
+              Text(
+                'No reminders yet.',
+                style: TextStyle(
+                  color: Theme.of(context)
+                      .textTheme
+                      .bodySmall
+                      ?.color
+                      ?.withOpacity(0.7),
+                ),
+              )
+            else
+              Column(
+                children: _reminders.map((r) {
+                  final textStyle = TextStyle(
+                    color: r.done
+                        ? Colors.white.withOpacity(0.5)
+                        : Colors.white,
+                    decoration:
+                        r.done ? TextDecoration.lineThrough : null,
+                  );
+
+                  return Padding(
+                    key: ValueKey(r.id),
+                    padding: const EdgeInsets.symmetric(vertical: 8.0),
+                    child: Row(
+                      children: [
+                        Container(
+                          width: 8,
+                          height: 8,
+                          margin: const EdgeInsets.only(right: 8),
+                          decoration: BoxDecoration(
+                            color: Colors.yellow[400],
+                            shape: BoxShape.circle,
+                          ),
                         ),
-                      ),
-                      Expanded(child: Text(r.text)),
-                    ],
-                  ),
-                );
-              }).toList(),
-            ),
+                        Expanded(child: Text(r.text, style: textStyle)),
+                      ],
+                    ),
+                  );
+                }).toList(),
+              ),
           ],
         ),
       ),
@@ -419,6 +711,12 @@ class _DailySummaryPageState extends State<DailySummaryPage> {
   }
 
   Widget _buildNasaPhotoCard(BuildContext context) {
+    final title = _nasaTitle ??
+        'NASA Astronomy Picture of the Day';
+    final explanation = _nasaExplanation ??
+        'A stunning view of the cosmos captured by NASA\'s telescopes.';
+    final imageUrl = _nasaPhotoUrl;
+
     return GlassCard(
       child: Padding(
         padding: const EdgeInsets.all(16),
@@ -440,17 +738,36 @@ class _DailySummaryPageState extends State<DailySummaryPage> {
               aspectRatio: 16 / 9,
               child: ClipRRect(
                 borderRadius: BorderRadius.circular(8),
-                child: Image.network(
-                  _nasaPhotoUrl,
-                  fit: BoxFit.cover,
-                ),
+                child: imageUrl == null
+                    ? Container(
+                        color: Colors.white.withOpacity(0.05),
+                        alignment: Alignment.center,
+                        child: const Text(
+                          'Image unavailable',
+                          style: TextStyle(color: Colors.grey),
+                        ),
+                      )
+                    : Image.network(
+                        imageUrl,
+                        fit: BoxFit.cover,
+                      ),
               ),
             ),
             const SizedBox(height: 8),
-            const Text(
-              "A stunning view of the cosmos captured by NASA's telescopes",
-              style: TextStyle(
+            Text(
+              title,
+              style: const TextStyle(
                 fontSize: 14,
+                fontWeight: FontWeight.w600,
+              ),
+            ),
+            const SizedBox(height: 4),
+            Text(
+              explanation,
+              maxLines: 3,
+              overflow: TextOverflow.ellipsis,
+              style: const TextStyle(
+                fontSize: 13,
                 color: Colors.grey,
               ),
             ),
@@ -498,7 +815,7 @@ class _DailySummaryPageState extends State<DailySummaryPage> {
 enum TaskPriority { high, medium, low }
 
 class _Task {
-  final int id;
+  final String id;
   final String title;
   final String time;
   final TaskPriority priority;
@@ -524,22 +841,46 @@ class _Task {
 }
 
 class _Event {
-  final int id;
+  final String id;
   final String title;
+  final DateTime start;
   final String time;
   final String location;
 
   const _Event({
     required this.id,
     required this.title,
+    required this.start,
     required this.time,
     required this.location,
   });
 }
 
 class _Reminder {
-  final int id;
+  final String id;
   final String text;
+  final bool done;
 
-  const _Reminder({required this.id, required this.text});
+  const _Reminder({
+    required this.id,
+    required this.text,
+    required this.done,
+  });
+
+  factory _Reminder.fromJson(Map<String, dynamic> json) {
+    final id = json['_id']?.toString() ?? '';
+    final title = json['title'] as String? ?? '';
+
+    bool done = false;
+    final completed = json['completed'];
+    if (completed is Map && completed['isCompleted'] == true) {
+      done = true;
+    }
+
+    return _Reminder(
+      id: id,
+      text: title,
+      done: done,
+    );
+  }
 }
