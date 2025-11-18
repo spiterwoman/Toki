@@ -1026,11 +1026,10 @@ app.post('/api/viewGarages', async(req,res)=>{
 		  const db = client.db('tokidatabase');
 		  const garageCollection = db.collection('parkinglocations');
 
-      const garages = await garageCollection.toArray();
-      
-    const sortedGarages = garages.sort((a, b) =>
-      a.garageName.localeCompare(b.garageName)
-    );
+      const garages = await garageCollection
+		  .find({})
+		  .sort({garageName:1})
+		  .toArray();
 
 		  ret = { success: true, sortedGarages, error: '', accessToken};
 
@@ -1413,3 +1412,4 @@ function generateRandomPassword(length = 12)
 }
 
         
+
