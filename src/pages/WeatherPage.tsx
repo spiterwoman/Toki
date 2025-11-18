@@ -3,9 +3,26 @@ import { Sunrise, Sunset, Calendar, Droplets, Wind, Eye, Gauge } from 'lucide-re
 import PageShell from '../components/PageShell';
 import GlassCard from '../components/GlassCard';
 
+type CurrentWeather = {
+  location: string;
+  emoji: string;
+  condition: string;
+  temperature: number | null;
+  feelsLike: number | null;
+  humidity: number | null;
+  windSpeed: number | null;
+  visibility: number | null;
+  pressure: number | null;
+  sunrise: string;
+  sunset: string;
+};
+
+type Hourly = { time: string; emoji: string; temp: number | string };
+type Weekly = { day: string; emoji: string; high: number | string; low: number | string };
+
 export default function WeatherPage() {
 
-  const [weather, setWeather] = useState({
+  const [weather] = useState<CurrentWeather>({
     location: '',
     emoji: '',
     condition: '',
@@ -19,10 +36,11 @@ export default function WeatherPage() {
     sunset: '',
   });
 
-  const [hourlyForecast, setHourlyForecast] = useState([]);
-  const [weeklyForecast, setWeeklyForecast] = useState([]);
+  const [hourlyForecast] = useState<Hourly[]>([]);
+  const [weeklyForecast] = useState<Weekly[]>([]);
 
-  const formatValue = (value, placeholder = '--') => value !== null && value !== undefined ? value : placeholder;
+  const formatValue = (value: number | string | null | undefined, placeholder = '--') =>
+    value !== null && value !== undefined ? value : placeholder;
 
   return (
     <>

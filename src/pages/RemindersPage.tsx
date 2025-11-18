@@ -19,13 +19,28 @@ export default function RemindersPage() {
   const active = reminders.filter((r) => !r.done);
   const doneCount = reminders.length - active.length;
 
-  const add = (e: React.FormEvent) => {
+  const add = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!title.trim()) return;
     const id = (globalThis.crypto && "randomUUID" in globalThis.crypto)
       ? (globalThis.crypto as Crypto).randomUUID()
       : Math.random().toString(36).slice(2);
     setReminders((rs) => [{ id, title: title.trim(), done: false }, ...rs]);
+    try {
+      const userId = localStorage.getItem("toki-user-id") || "";
+      const accessToken = localStorage.getItem("toki-auth-token") || "";
+      await fetch("/api/createReminder", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          userId,
+          accessToken,
+          title: title.trim(),
+        }),
+      });
+    } catch (err) {
+      console.error("Failed to create reminder:", err);
+    }
     setTitle("");
     setOpen(false);
   };

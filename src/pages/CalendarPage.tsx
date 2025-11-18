@@ -52,13 +52,31 @@ export default function CalendarPage() {
     setYear(d.getFullYear()); setMonth(d.getMonth());
   };
 
-  const add = (e: React.FormEvent) => {
+  const add = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!title.trim()) return;
     const id = (globalThis.crypto && "randomUUID" in globalThis.crypto)
       ? (globalThis.crypto as Crypto).randomUUID()
       : Math.random().toString(36).slice(2);
     setEvents((evs) => [{ id, title: title.trim(), date: selected, time: time || undefined, theme }, ...evs]);
+    try {
+      const userId = localStorage.getItem("toki-user-id") || "";
+      const accessToken = localStorage.getItem("toki-auth-token") || "";
+      await fetch("/api/createCalendarEvent", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          userId,
+          accessToken,
+          title: title.trim(),
+          description: "",
+          startDate: selected,
+          endDate: selected,
+        }),
+      });
+    } catch (err) {
+      console.error("Failed to create calendar event:", err);
+    }
     setTitle(""); setTime(""); setOpen(false);
   };
   const remove = (id: string) => setEvents((evs) => evs.filter((e) => e.id !== id));

@@ -4,10 +4,6 @@ import GlassCard from "../components/GlassCard";
 import PageShell from "../components/PageShell";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "../components/ui/dialog";
 
-function generateTempPassword() {
-  return `TMP-${Math.random().toString(36).slice(-6).toUpperCase()}`;
-}
-
 export default function LoginPage() {
   const navigate = useNavigate();
   const [email, setEmail] = useState("");
@@ -17,7 +13,7 @@ export default function LoginPage() {
   const [resetOpen, setResetOpen] = useState(false);
   const [resetEmail, setResetEmail] = useState("");
   const [resetStatus, setResetStatus] = useState<string | null>(null);
-  const [tempPreview, setTempPreview] = useState<string | null>(null);
+  const [resetLoading, setResetLoading] = useState(false);
 
   const onSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -66,13 +62,14 @@ console.log("Raw response body:", text);
         return;
       }
 
-      const data = await res.json();
+      /*const data = await res.json();
       if (data?.token) {
         localStorage.setItem("toki-auth-token", data.token);
       }
       sessionStorage.setItem("toki-logged-in", "1");
+      */
       setStatus("Login successful. Redirecting...");
-      navigate("/daily-summary");
+      navigate("/verify");
     } catch (err) {
       console.error("Login error:", err);
       setStatus("Cannot reach server. Please try again.");
@@ -81,15 +78,42 @@ console.log("Raw response body:", text);
     }
   };
 
-  const onResetSubmit = (e: React.FormEvent) => {
+  const onResetSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     const trimmed = resetEmail.trim();
     if (!trimmed) return;
-    const temp = generateTempPassword();
-    localStorage.setItem("toki-temp-password", temp);
-    localStorage.setItem("toki-temp-email", trimmed);
-    setResetStatus(`Temporary password sent to ${trimmed}.`);
-    setTempPreview(temp);
+
+    try {
+      setResetLoading(true);
+      setResetStatus("Sending temporary password...");
+      const res = await fetch("/api/forgotPass", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ email: trimmed }),
+      });
+      if (!res.ok) {
+        let message = "Could not send temporary password. Please try again.";
+        try {
+          const data = await res.json();
+          if (data?.message) message = data.message;
+        } catch {
+          // ignore parse error
+        }
+        setResetStatus(message);
+        return;
+      }
+      setResetStatus(`Temporary password sent to ${trimmed}. Redirecting to login...`);
+      setTimeout(() => {
+        setResetOpen(false);
+        setResetEmail("");
+        navigate("/login");
+      }, 1200);
+    } catch (err) {
+      console.error("Forgot password error:", err);
+      setResetStatus("Cannot reach server. Please try again.");
+    } finally {
+      setResetLoading(false);
+    }
   };
 
   return (
@@ -200,25 +224,12 @@ console.log("Raw response body:", text);
               required
             />
             <button className="btn" type="submit" style={{ alignSelf: "flex-start" }}>
-              Send temporary password
+              {resetLoading ? "Sending..." : "Send temporary password"}
             </button>
           </form>
           {resetStatus && (
             <div style={{ marginTop: 12, color: "var(--muted)" }}>
-              {resetStatus} (Front-end demo shown below.)
-              {tempPreview && (
-                <div
-                  style={{
-                    marginTop: 6,
-                    fontFamily: "monospace",
-                    background: "rgba(255,255,255,.06)",
-                    padding: 8,
-                    borderRadius: 8,
-                  }}
-                >
-                  Demo password: {tempPreview}
-                </div>
-              )}
+              {resetStatus}
             </div>
           )}
         </DialogContent>
