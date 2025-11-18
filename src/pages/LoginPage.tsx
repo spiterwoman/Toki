@@ -13,12 +13,13 @@ export default function LoginPage() {
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [status, setStatus] = useState<string | null>(null);
+  const [loading, setLoading] = useState(false);
   const [resetOpen, setResetOpen] = useState(false);
   const [resetEmail, setResetEmail] = useState("");
   const [resetStatus, setResetStatus] = useState<string | null>(null);
   const [tempPreview, setTempPreview] = useState<string | null>(null);
 
-  const onSubmit = (e: React.FormEvent) => {
+  const onSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     const trimmedEmail = email.trim();
     const trimmedPassword = password.trim();
@@ -32,8 +33,43 @@ export default function LoginPage() {
       return;
     }
 
-    setStatus("Credentials ready to be sent to backend (not implemented)");
-    console.log("Login payload", { email: trimmedEmail, password: trimmedPassword });
+    //login path
+    try {
+      setLoading(true);
+      setStatus("Signing you in...");
+
+      const res = await fetch("/api/loginUser", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ email: trimmedEmail, password: trimmedPassword }),
+        credentials: "include",
+      });
+
+      if (!res.ok) {
+        let message = "Login failed. Please check your email or password.";
+        try {
+          const data = await res.json();
+          if (data?.message) message = data.message;
+        } catch {
+          //ignore json parse errors
+        }
+        setStatus(message);
+        return;
+      }
+
+      const data = await res.json();
+      if (data?.token) {
+        localStorage.setItem("toki-auth-token", data.token);
+      }
+      sessionStorage.setItem("toki-logged-in", "1");
+      setStatus("Login successful. Redirecting...");
+      navigate("/daily-summary");
+    } catch (err) {
+      console.error("Login error:", err);
+      setStatus("Cannot reach server. Please try again.");
+    } finally {
+      setLoading(false);
+    }
   };
 
   const onResetSubmit = (e: React.FormEvent) => {
@@ -82,8 +118,13 @@ export default function LoginPage() {
               required
             />
 
-            <button className="btn" type="submit" style={{ marginTop: 14, width: "100%" }} disabled={!email.trim() || !password}>
-              Log In
+            <button
+              className="btn"
+              type="submit"
+              style={{ marginTop: 14, width: "100%" }}
+              disabled={loading || !email.trim() || !password}
+            >
+              {loading ? "Logging in..." : "Log In"}
             </button>
             {status && (
               <div style={{ color: "var(--muted)", marginTop: 8 }} aria-live="polite">
