@@ -24,15 +24,14 @@ exports.setApp = function (app, client)
   app.post('/api/addUser', async (req, res) => {
 
     const { firstName, lastName, email, password } = req.body;
-    let ret = {};
 
     try 
     {
       // Check if user already exists
       const db = client.db('tokidatabase');
-      const existing = await db.collection('users').findOne({ email: email });
+      const existing = await db.collection('users').findOne({ email});
       if (existing) {
-          return res.status(200).json({ error: 'Email already registered' });
+          return res.status(400).json({ error: 'Email already registered' });
       }
 
       const verificationToken = Math.floor(Math.random() * 900000)//.toString();
@@ -50,17 +49,24 @@ exports.setApp = function (app, client)
 
       // Optionally create JWT immediately
       const { accessToken } = token.createToken(firstName, lastName, id);
-
-      console.log("send to login page after this");
-
-      ret = { id, firstName, lastName, accessToken, error: 'success, send to login page' };
-    } 
-    catch (e) 
-    {
-      ret = { id: -1, firstName: '', lastName: '', accessToken: '', error: e.toString() };
+      
+      return res.status(200).json({
+	      id,
+	      firstName,
+	      lastName,
+	      accessToken,
+	      verificationToken,
+	      error: 'success, send to login page'
+      });
+    }  catch (e) {
+	    return res.status(500).json({
+		    id: -1,
+		    firstName: "",
+		    lastName: "",
+		    accessToken: "",
+		    error: e.toString()
+	    });
     }
-
-    res.status(200).json(ret);
   });
 
   app.post('/api/forgotPass', async (req, res, next) => {
@@ -108,43 +114,58 @@ exports.setApp = function (app, client)
     res.status(200).json(ret);
   });
 
-  app.post('/api/loginUser', async (req, res, next) => {
+  app.post('/api/loginUser', async (req, res) => {
     // incoming: email, password
     // outgoing: id, firstName, lastName, accessToken, error
 
     const { email, password } = req.body;
-    let error = '';
-    let ret = {};
+
 
     try {
       const db = client.db('tokidatabase');
-      const results = await db.collection('users').find({ email: email, password: password }).toArray();
-
-      if (results.length > 0) {
-        const user = results[0];
-        const id = user._id.toString();
-        const firstName = user.firstName;
-        const lastName = user.lastName;
-        const verificationToken = user.verificationToken;
-
-        const token = require('./createJWT.js');
-        const { accessToken } = token.createToken(firstName, lastName, id);
-
-        console.log("send email");
-
-        sendVerEmail(user.email, verificationToken);
-
-        console.log("should have sent email, go to verify page");
-
-        ret = { id, firstName, lastName, accessToken, verificationToken, error: 'none, send to verify page' };
-      } else {
-        ret = { id: -1, firstName, lastName, accessToken, verificationToken : 0, error: 'Login/Password incorrect' };
+      const user = await db.collection('users').findOne({ email });
+      if (!user){
+	      return res.status(404).json({
+		      error: "Email not found"
+	      });
       }
-    } catch (e) {
-      ret = { id: -1, firstName: '', lastName: '', accessToken: '', verificationToken : -1,error: e.toString() };
-    }
+      if (user.password !== password){
+	      return res.status(401).json({
+		      error: "Incorrect Password",
+	      });
+      }
+	    const id = user._id.toString();
+	    const { accessToken } = token.createToken(user.firstName, user.lastName, id);
 
-    res.status(200).json(ret);
+	    // not verified
+	    if (!user.isVerified){
+	    sendVerEmail(user.email, user.verificationToken);
+      console.log("Sending response with status 200");
+	    return res.status(200).json({
+		    id,
+		    firstName: user.firstName,
+		    lastName: user.lastName,
+		    accessToken,
+		    verificationToken: user.verificationToken,
+		    error: "Please verify email"
+	    });
+      console.log("2");
+    } 
+    console.log("3");
+	    return res.status(200).json({
+		    id,
+		    firstName: user.firstName,
+		    lastName: user.lastName,
+		    accessToken,
+		    error: ""
+	    });
+    }
+	    catch (e){
+        console.log("4");
+	    return res.status(500).json({
+		    error: e.toString(),
+	    });
+    }
   });
 
   app.post('/api/verifyUser', async (req, res, next) => {
@@ -406,9 +427,10 @@ exports.setApp = function (app, client)
 	// validate JWT
     try{
 	    if (token.isExpired(accessToken)){
-		    return res
-		      .status(200)
-		      .json({error: 'The JWT is no longer valid', accessToken: ''});
+		    return res.status(200).json({
+			    success: false,
+			    error: 'The JWT is no longer valid',
+			    accessToken: ''});
 	    }
     }catch(e) {
 	    console.log(e.message);
@@ -416,18 +438,18 @@ exports.setApp = function (app, client)
 	  try{
 		  const db = client.db('tokidatabase');
 		  const remindersCollection = db.collection('reminders');
-		  if (reminderId){
+		  if (reminderId) {
 			  // specific task
-		    const task = await remindersCollection.findOne({
+		    const reminder = await remindersCollection.findOne({
 			    _id: new ObjectId(reminderId),
 			    userId: new ObjectId(userId),
 		    });
-		  if (!reminders){
-			  ret = {success: false, error: 'Reminder not found', accessToken};
-		  } else {
-			  ret = {success: true, reminders, error: '', accessToken};
-		  }
-		  } else {
+		    if (!reminder){
+			 	 ret = {success: false, error: 'Reminder not found', accessToken };
+		  	} else {
+			 	 ret = {success: true, reminder, error: '', accessToken };
+		 	  }
+		 	  } else {
 			  // all reminders
 			  const reminders = await remindersCollection
 			  .find({userId: new ObjectId(userId)})
@@ -436,15 +458,17 @@ exports.setApp = function (app, client)
 			ret = {success: true, reminders, error: '', accessToken};
 		  }
 	  } catch (e){
-		  ret = {success: false, error: e.toString()};
+		  console.log('Database error:', e.message, e);
+		  ret = {success: false, error: e.message};
 	  }
 	  // Refresh JWT
-	  let refreshedToken = null;
+	  let refreshedToken = accessToken;
 	  try {
 		  refreshedToken = token.refresh(accessToken);
 	  } catch (e){
 		  console.log(e.message);
-	  } 
+	  }
+	  ret.accessToken = refreshedToken;
 	  res.status(200).json(ret);
   });
 
@@ -1087,6 +1111,55 @@ exports.setApp = function (app, client)
 
 // V2 to try
   // Try to find Chrome/Chromium executable
+
+app.post('/api/viewGarages', async(req,res)=>{
+    const {accessToken} = req.body;
+    let ret = {};
+	// validate JWT
+    try{
+	    if (token.isExpired(accessToken)){
+		    return res
+		      .status(200)
+		      .json({error: 'The JWT is no longer valid', accessToken: ''});
+	    }
+    }catch(e) {
+	    console.log(e.message);
+    }
+
+	  try{
+		  const db = client.db('tokidatabase');
+		  const garageCollection = db.collection('parkinglocations');
+
+      const garages = await garageCollection.toArray();
+      
+    const sortedGarages = garages.sort((a, b) =>
+      a.garageName.localeCompare(b.garageName)
+    );
+
+		  ret = { success: true, sortedGarages, error: '', accessToken};
+
+      if (!garages) {
+        return res.status(200).json({
+          success: false, 
+          error: 'No garages found',
+          accessToken
+        });
+      } 
+    }
+	  catch (e)
+    {
+		  ret = {success: false, error: e.toString()};
+	  }
+	  // Refresh JWT
+	  let refreshedToken = null;
+	  try {
+		  refreshedToken = token.refresh(accessToken);
+	  } catch (e){
+		  console.log(e.message);
+	  } 
+	  res.status(200).json(ret);
+  });
+
 async function updateGarages() {
   const maxRetries = 3;
   let retryCount = 0;
@@ -1336,6 +1409,65 @@ async function updateAPOD() {
 updateAPOD();
 setInterval(updateAPOD, 24 * 60 * 1000); 
 
+// Get recent APOD documents
+app.post('/api/recentAPODs', async (req, res) => {
+  const { accessToken, limit } = req.body;
+  let ret = {};
+
+  try {
+    if (token.isExpired(accessToken)) {
+      return res
+        .status(200)
+        .json({ error: 'The JWT is no longer valid', accessToken: '' });
+    }
+  } catch (e) {
+    console.log(e.message);
+  }
+
+  try {
+    const db = client.db('tokidatabase');
+    const apodsCollection = db.collection('apods');
+
+    // how many to fetch (default 3, cap at 10 just in case)
+    const n =
+      typeof limit === 'number' && limit > 0 && limit <= 10 ? limit : 3;
+      
+    const docs = await apodsCollection
+      .find({})
+      .sort({ date: -1 }) // date is "YYYY-MM-DD" string, so this sorts newest first
+      .limit(n)
+      .project({
+        _id: 0,
+        title: 1,
+        date: 1,
+        hdurl: 1,
+        thumbnailUrl: 1,
+        explanation: 1,
+        copyright: 1,
+      })
+      .toArray();
+
+    ret = {
+      success: true,
+      photos: docs,
+      error: '',
+      accessToken,
+    };
+  } catch (e) {
+    ret = { success: false, error: e.toString() };
+  }
+
+  // refresh token (same pattern as other routes)
+  let refreshedToken = null;
+  try {
+    refreshedToken = token.refresh(accessToken);
+  } catch (e) {
+    console.log(e.message);
+  }
+
+  res.status(200).json(ret);
+});
+
 
 }
   
@@ -1376,4 +1508,3 @@ function sendTempPassEmail(email, tempPassword)
 
 
         
-
