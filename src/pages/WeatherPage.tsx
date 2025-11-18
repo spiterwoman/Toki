@@ -3,37 +3,6 @@ import { Sunrise, Sunset, Calendar, Droplets, Wind, Eye, Gauge } from 'lucide-re
 import PageShell from '../components/PageShell';
 import GlassCard from '../components/GlassCard';
 
-const mockWeatherData = {
-  current: {
-    emoji: '☀️',
-    condition: 'Sunny',
-    temperature: 75,
-    feelsLike: 73,
-    humidity: 45,
-    windSpeed: 8,
-    visibility: 10,
-    pressure: 1013,
-    sunrise: '7:12 AM',
-    sunset: '7:45 PM',
-  },
-  hourly: [
-    { time: '9 AM', temp: 72, emoji: '☀️' },
-    { time: '12 PM', temp: 78, emoji: '☀️' },
-    { time: '3 PM', temp: 82, emoji: '🌤️' },
-    { time: '6 PM', temp: 76, emoji: '🌤️' },
-    { time: '9 PM', temp: 70, emoji: '🌙' },
-  ],
-  weekly: [
-    { day: 'Mon', high: 82, low: 68, emoji: '☀️' },
-    { day: 'Tue', high: 79, low: 66, emoji: '⛅' },
-    { day: 'Wed', high: 75, low: 64, emoji: '🌧️' },
-    { day: 'Thu', high: 73, low: 62, emoji: '🌧️' },
-    { day: 'Fri', high: 76, low: 65, emoji: '⛅' },
-    { day: 'Sat', high: 80, low: 67, emoji: '☀️' },
-    { day: 'Sun', high: 83, low: 69, emoji: '☀️' },
-  ],
-};
-
 export default function WeatherPage() {
 
   const [currentWeather, setCurrentWeather] = useState({
