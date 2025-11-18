@@ -3,6 +3,12 @@ import PageShell from "../components/PageShell";
 import GlassCard from "../components/GlassCard";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from "../components/ui/dialog";
 
+const getAuth = () => {
+  const userId = localStorage.getItem("toki-user-id") || sessionStorage.getItem("toki-user-id") || "";
+  const accessToken = localStorage.getItem("toki-auth-token") || sessionStorage.getItem("toki-auth-token") || "";
+  return { userId, accessToken };
+};
+
 type Reminder = {
   id: string;
   title: string;
@@ -27,17 +33,22 @@ export default function RemindersPage() {
       : Math.random().toString(36).slice(2);
     setReminders((rs) => [{ id, title: title.trim(), done: false }, ...rs]);
     try {
-      const userId = localStorage.getItem("toki-user-id") || "";
-      const accessToken = localStorage.getItem("toki-auth-token") || "";
-      await fetch("/api/createReminder", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          userId,
-          accessToken,
-          title: title.trim(),
-        }),
-      });
+      const { userId, accessToken } = getAuth();
+      console.log("createReminder auth", { userId, accessToken });
+      if (!userId || !accessToken) {
+        console.warn("Missing auth; skipping createReminder");
+      } else {
+        const res = await fetch("/api/createReminder", {
+          method: "POST",
+          credentials: "include", // <- important
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ title }),
+        });
+        if (!res.ok) {
+          const text = await res.text();
+          console.error("createReminder failed:", res.status, text);
+        }
+      }
     } catch (err) {
       console.error("Failed to create reminder:", err);
     }

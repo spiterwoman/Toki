@@ -4,6 +4,11 @@ import GlassCard from "../components/GlassCard";
 import PageShell from "../components/PageShell";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "../components/ui/dialog";
 
+const storeAuth = (data: any) => {
+  if (data?.token) localStorage.setItem("toki-auth-token", data.token);
+  if (data?.userId) localStorage.setItem("toki-user-id", data.userId);
+};
+
 export default function LoginPage() {
   const navigate = useNavigate();
   const [email, setEmail] = useState("");
@@ -34,21 +39,12 @@ export default function LoginPage() {
       setLoading(true);
       setStatus("Signing you in...");
 
-      console.log("something");
-
       const res = await fetch("/api/loginUser", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ email: trimmedEmail, password: trimmedPassword }),
         credentials: "include",
       });
-
-      
-console.log("HTTP Status:", res.status);
-console.log("res.ok:", res.ok);
-const text = await res.text();
-console.log("Raw response body:", text);
-
 
       if (!res.ok) {
         let message = "Login failed. Please check your email or password.";
@@ -62,12 +58,10 @@ console.log("Raw response body:", text);
         return;
       }
 
-      /*const data = await res.json();
-      if (data?.token) {
-        localStorage.setItem("toki-auth-token", data.token);
-      }
+      const data = await res.json();
+      console.log("login response", data);
+      storeAuth(data);
       sessionStorage.setItem("toki-logged-in", "1");
-      */
       setStatus("Login successful. Redirecting...");
       navigate("/verify");
     } catch (err) {
@@ -173,7 +167,7 @@ console.log("Raw response body:", text);
             onClick={() => {
               setResetOpen(true);
               setResetStatus(null);
-              setTempPreview(null);
+              ;
             }}
             style={{
               marginTop: 8,
@@ -197,7 +191,7 @@ console.log("Raw response body:", text);
           if (!open) {
             setResetEmail("");
             setResetStatus(null);
-            setTempPreview(null);
+            ;
           }
         }}
       >
@@ -218,7 +212,7 @@ console.log("Raw response body:", text);
               value={resetEmail}
               onChange={(e) => {
                 setResetStatus(null);
-                setTempPreview(null);
+                ;
                 setResetEmail(e.target.value);
               }}
               required

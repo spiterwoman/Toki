@@ -4,6 +4,12 @@ import GlassCard from "../components/GlassCard";
 import type { Task } from "../types";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from "../components/ui/dialog";
 
+const getAuth = () => {
+  const userId = localStorage.getItem("toki-user-id") || sessionStorage.getItem("toki-user-id") || "";
+  const accessToken = localStorage.getItem("toki-auth-token") || sessionStorage.getItem("toki-auth-token") || "";
+  return { userId, accessToken };
+};
+
 export default function TasksPage() {
   const [tasks, setTasks] = useState<Task[]>([]);
   const [title, setTitle] = useState("");
@@ -25,20 +31,28 @@ export default function TasksPage() {
       : Math.random().toString(36).slice(2);
     setTasks((ts) => [{ id, title: title.trim(), time: time || undefined, tag, priority, done: false }, ...ts]);
     try {
-      const userId = localStorage.getItem("toki-user-id") || "";
-      const accessToken = localStorage.getItem("toki-auth-token") || "";
-      await fetch("/api/createTask", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          userId,
-          accessToken,
-          title: title.trim(),
-          dueDate: time || "",
-          tag,
-          priority,
-        }),
-      });
+      const { userId, accessToken } = getAuth();
+      console.log("createTask auth", { userId, accessToken });
+      if (!userId || !accessToken) {
+        console.warn("Missing auth; skipping createTask");
+      } else {
+        const res = await fetch("/api/createTask", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            userId,
+            accessToken,
+            title: title.trim(),
+            dueDate: time || "",
+            tag,
+            priority,
+          }),
+        });
+        if (!res.ok) {
+          const text = await res.text();
+          console.error("createTask failed:", res.status, text);
+        }
+      }
     } catch (err) {
       console.error("Failed to create task:", err);
     }

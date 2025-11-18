@@ -4,6 +4,11 @@ import GlassCard from "../components/GlassCard";
 import PageShell from "../components/PageShell";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "../components/ui/dialog";
 
+const storeAuth = (data: any) => {
+  if (data?.token) localStorage.setItem("toki-auth-token", data.token);
+  if (data?.userId) localStorage.setItem("toki-user-id", data.userId);
+};
+
 export default function SignupPage() {
   const navigate = useNavigate();
   const [name, setName] = useState("");
@@ -45,6 +50,8 @@ export default function SignupPage() {
         setStatus(message);
         return;
       }
+      const data = await res.json();
+      storeAuth(data);
       setStatus("Account created. Redirecting to login...");
       setTimeout(() => navigate("/login"), 800);
     } catch (err) {
