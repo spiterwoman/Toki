@@ -29,10 +29,11 @@ function buildMonth(year: number, month: number) {
 type UIEvent = CalendarEvent & { theme?: "purple" | "pink" | "blue" };
 
 export default function CalendarPage() {
-  const now = new Date();
-  const [year, setYear] = useState(now.getFullYear());
-  const [month, setMonth] = useState(now.getMonth());
-  const [selected, setSelected] = useState(fmt(now));
+  const today = new Date();
+  const todayKey = fmt(new Date(today.getFullYear(), today.getMonth(), today.getDate()));
+  const [year, setYear] = useState(today.getFullYear());
+  const [month, setMonth] = useState(today.getMonth());
+  const [selected, setSelected] = useState(todayKey);
   const [events, setEvents] = useState<UIEvent[]>([]);
   const [title, setTitle] = useState("");
   const [time, setTime] = useState("");
