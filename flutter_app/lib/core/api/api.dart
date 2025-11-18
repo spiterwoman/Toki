@@ -652,4 +652,72 @@ class Api {
       throw Exception('Unexpected error: $e');
     }
   }
+
+    // ===== UCF Garages / Parking =========================================
+
+  /// Fetch all garages from the backend.
+  ///
+  /// Backend route: POST /api/viewGarages
+  /// Body: { userId, accessToken }
+  ///
+  /// Expected response:
+  /// {
+  ///   success: true,
+  ///   garages: [
+  ///     {
+  ///       "garageName": "Garage A",
+  ///       "availableSpots": 250,
+  ///       "totalSpots": 1000,
+  ///       "percentFull": 75,
+  ///       "lastUpdated": "2025-11-18T03:12:45.123Z",
+  ///       "updatedAt": "...",
+  ///       "createdAt": "..."
+  ///     },
+  ///     ...
+  ///   ],
+  ///   error: "",
+  ///   accessToken: "..."
+  /// }
+  Future<List<Map<String, dynamic>>> viewGarages() async {
+    // Reuse the same auth body helper (userId + accessToken)
+    final body = await _buildAuthBody();
+
+    try {
+      final res = await _dio.post('/api/viewGarages', data: body);
+      final map = Map<String, dynamic>.from(res.data);
+
+      if (map['success'] != true) {
+        final err = map['error'] ?? 'Failed to fetch garage data.';
+        throw Exception(err.toString());
+      }
+
+      // If the backend refreshed the token, persist it
+      if (map['accessToken'] != null) {
+        await _store.write(
+          key: 'accessToken',
+          value: map['accessToken'].toString(),
+        );
+      }
+
+      final raw = map['garages'] ?? [];
+      final garages = List<Map<String, dynamic>>.from(
+        (raw as List).map(
+          (g) => Map<String, dynamic>.from(g as Map),
+        ),
+      );
+
+      return garages;
+    } on DioException catch (e) {
+      if (e.response != null) {
+        throw Exception(
+          'Server error: ${e.response?.statusCode} ${e.response?.data}',
+        );
+      } else {
+        throw Exception('Network error: ${e.message}');
+      }
+    } catch (e) {
+      throw Exception('Unexpected error: $e');
+    }
+  }
+
 }

@@ -1243,6 +1243,61 @@ async function updateGarages() {
 updateGarages();
 setInterval(updateGarages, 2 * 60 * 1000); //*/
 
+// incoming: userId, accessToken
+// outgoing: garages (all), error
+app.post('/api/viewGarages', async (req, res) => {
+  const { userId, accessToken } = req.body;
+  let ret = {};
+
+  // validate JWT
+  try {
+    if (token.isExpired(accessToken)) {
+      return res
+        .status(200)
+        .json({ success: false, error: 'The JWT is no longer valid', accessToken: '' });
+    }
+  } catch (e) {
+    console.log(e.message);
+  }
+
+  try {
+    const db = client.db('tokidatabase');
+    const garagesCollection = db.collection('parkinglocations');
+
+    // all garages in the collection
+    const garages = await garagesCollection
+      .find({})
+      .sort({ garageName: 1 })
+      .toArray();
+
+    ret = {
+      success: true,
+      garages,
+      error: '',
+      accessToken,
+    };
+  } catch (e) {
+    console.error('Error fetching garages:', e);
+    ret = {
+      success: false,
+      error: e.toString(),
+      accessToken,
+    };
+  }
+
+  // Refresh JWT
+  try {
+    const refreshedToken = token.refresh(accessToken);
+    if (refreshedToken) {
+      ret.accessToken = refreshedToken;
+    }
+  } catch (e) {
+    console.log(e.message);
+  }
+
+  res.status(200).json(ret);
+});
+
 
 app.post('/api/viewAPOD', async(req,res)=>{
 	  // incoming: userId, accessToken, taskId
@@ -1298,104 +1353,104 @@ app.post('/api/viewAPOD', async(req,res)=>{
 	  res.status(200).json(ret);
   });
 
-async function updateAPOD() {
-  try {
-    const response = await fetch('https://api.nasa.gov/planetary/apod?api_key=50k2BOQgfXtPpguZO2BJCztlcCxqh1nG2fofFVBm');
-    const data = await response.json();
-    console.log(data);
+  async function updateAPOD() {
+    try {
+      const response = await fetch('https://api.nasa.gov/planetary/apod?api_key=50k2BOQgfXtPpguZO2BJCztlcCxqh1nG2fofFVBm');
+      const data = await response.json();
+      console.log(data);
 
-    const document = {
-    title: data.title,
-    date: data.date,
-    hdurl: data.hdurl,
-    url: data.url,
-    explanation: data.explanation,
-    thumbnailUrl: data.url,
-    copyright: data.copyright || null,
-    createdAt: new Date(),
-    updatedAt: new Date()
-    };
+      const document = {
+      title: data.title,
+      date: data.date,
+      hdurl: data.hdurl,
+      url: data.url,
+      explanation: data.explanation,
+      thumbnailUrl: data.url,
+      copyright: data.copyright || null,
+      createdAt: new Date(),
+      updatedAt: new Date()
+      };
 
-    await client.connect();
-    const db = client.db('tokidatabase');
-    const collection = db.collection("apods");
+      await client.connect();
+      const db = client.db('tokidatabase');
+      const collection = db.collection("apods");
 
-    const existingAPOD = await collection.findOne({ date: data.date });
-    
-    if (existingAPOD) {
-      console.log(`APOD for date ${data.date} already exists. Skipping insert.`);
-      return { acknowledged: false, message: 'APOD already exists' };
+      const existingAPOD = await collection.findOne({ date: data.date });
+      
+      if (existingAPOD) {
+        console.log(`APOD for date ${data.date} already exists. Skipping insert.`);
+        return { acknowledged: false, message: 'APOD already exists' };
+      }
+
+      const result = await collection.insertOne(document);
+      return result;
+    } catch (error) {
+      console.error('Error fetching NASA images:', error);
+    }
+  }
+
+  updateAPOD();
+  setInterval(updateAPOD, 24 * 60 * 1000); 
+
+  // Get recent APOD documents
+  app.post('/api/recentAPODs', async (req, res) => {
+    const { accessToken, limit } = req.body;
+    let ret = {};
+
+    try {
+      if (token.isExpired(accessToken)) {
+        return res
+          .status(200)
+          .json({ error: 'The JWT is no longer valid', accessToken: '' });
+      }
+    } catch (e) {
+      console.log(e.message);
     }
 
-    const result = await collection.insertOne(document);
-    return result;
-  } catch (error) {
-    console.error('Error fetching NASA images:', error);
-  }
-}
+    try {
+      const db = client.db('tokidatabase');
+      const apodsCollection = db.collection('apods');
 
-updateAPOD();
-setInterval(updateAPOD, 24 * 60 * 1000); 
+      // how many to fetch (default 3, cap at 10 just in case)
+      const n =
+        typeof limit === 'number' && limit > 0 && limit <= 10 ? limit : 3;
 
-// Get recent APOD documents
-app.post('/api/recentAPODs', async (req, res) => {
-  const { accessToken, limit } = req.body;
-  let ret = {};
+      const docs = await apodsCollection
+        .find({})
+        .sort({ date: -1 }) // date is "YYYY-MM-DD" string, so this sorts newest first
+        .limit(n)
+        .project({
+          _id: 0,
+          title: 1,
+          date: 1,
+          hdurl: 1,
+          url: 1,
+          thumbnailUrl: 1,
+          explanation: 1,
+          copyright: 1,
+        })
+        .toArray();
 
-  try {
-    if (token.isExpired(accessToken)) {
-      return res
-        .status(200)
-        .json({ error: 'The JWT is no longer valid', accessToken: '' });
+      ret = {
+        success: true,
+        photos: docs,
+        error: '',
+        accessToken,
+      };
+    } catch (e) {
+      ret = { success: false, error: e.toString() };
     }
-  } catch (e) {
-    console.log(e.message);
-  }
 
-  try {
-    const db = client.db('tokidatabase');
-    const apodsCollection = db.collection('apods');
+    // refresh token (same pattern as other routes)
+    let refreshedToken = null;
+    try {
+      refreshedToken = token.refresh(accessToken);
+    } catch (e) {
+      console.log(e.message);
+    }
 
-    // how many to fetch (default 3, cap at 10 just in case)
-    const n =
-      typeof limit === 'number' && limit > 0 && limit <= 10 ? limit : 3;
-
-    const docs = await apodsCollection
-      .find({})
-      .sort({ date: -1 }) // date is "YYYY-MM-DD" string, so this sorts newest first
-      .limit(n)
-      .project({
-        _id: 0,
-        title: 1,
-        date: 1,
-        hdurl: 1,
-        url: 1,
-        thumbnailUrl: 1,
-        explanation: 1,
-        copyright: 1,
-      })
-      .toArray();
-
-    ret = {
-      success: true,
-      photos: docs,
-      error: '',
-      accessToken,
-    };
-  } catch (e) {
-    ret = { success: false, error: e.toString() };
-  }
-
-  // refresh token (same pattern as other routes)
-  let refreshedToken = null;
-  try {
-    refreshedToken = token.refresh(accessToken);
-  } catch (e) {
-    console.log(e.message);
-  }
-
-  res.status(200).json(ret);
-});
+    res.status(200).json(ret);
+  });
 
 
 }
