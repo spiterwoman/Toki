@@ -216,6 +216,18 @@ class _NasaPhotoPageState extends State<NasaPhotoPage> {
                           child: Image.network(
                             data.url,
                             fit: BoxFit.cover,
+                            errorBuilder: (context, error, stackTrace) {
+                              return Container(
+                                color: Colors.white.withOpacity(0.05),
+                                alignment: Alignment.center,
+                                child: const Text(
+                                  "Image unavailable",
+                                  style: TextStyle(
+                                    color: Color.fromRGBO(255, 255, 255, 0.6),
+                                  ),
+                                ),
+                              );
+                            },
                           ),
                         ),
                       )
@@ -448,10 +460,7 @@ class _RecentPhotoCard extends StatelessWidget {
         children: [
           AspectRatio(
             aspectRatio: 16 / 9,
-            child: Image.network(
-              photo.thumbnail,
-              fit: BoxFit.cover,
-            ),
+            child: _buildThumbnail(photo.thumbnail),
           ),
           Padding(
             padding: const EdgeInsets.all(8),
@@ -477,6 +486,35 @@ class _RecentPhotoCard extends StatelessWidget {
             ),
           ),
         ],
+      ),
+    );
+  }
+
+  /// Handles empty URLs and load errors gracefully.
+  Widget _buildThumbnail(String url) {
+    if (url.isEmpty) {
+      return _fallback();
+    }
+
+    return Image.network(
+      url,
+      fit: BoxFit.cover,
+      errorBuilder: (context, error, stackTrace) {
+        return _fallback();
+      },
+    );
+  }
+
+  /// Reusable fallback widget
+  Widget _fallback() {
+    return Container(
+      color: Colors.white.withOpacity(0.05),
+      alignment: Alignment.center,
+      child: const Text(
+        "Image unavailable",
+        style: TextStyle(
+          color: Color.fromRGBO(255, 255, 255, 0.6),
+        ),
       ),
     );
   }

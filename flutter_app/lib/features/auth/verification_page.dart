@@ -61,7 +61,7 @@ class _VerificationPageState extends State<VerificationPage> {
 
     if (err.toLowerCase().startsWith('success')) {
       if (!mounted) return;
-      Navigator.of(context).pushReplacementNamed('/reminders');
+      Navigator.of(context).pushReplacementNamed('/daily');
     } else {
       if (!mounted) return;
       _showSnack(err); // show the REAL error from backend
