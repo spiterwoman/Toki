@@ -155,7 +155,7 @@ export default function WeatherPage() {
             <GlassCard style={{ padding: 24, marginBottom: 24 }}>
               <div style={{ fontWeight: 'bold' }}>Hourly Forecast</div>
               {hourlyForecast.length === 0 ? (
-                <div style={{ marginTop: 16, color: 'rgba(255,255,255,0.6)' }}>No hourly forecast available.</div>
+                <div style={{ marginTop: 16, color: 'rgba(255,255,255,0.6)' }}>Loading hourly forecast...</div>
               ) : (
                 <div
                   style={{
@@ -211,7 +211,7 @@ export default function WeatherPage() {
               </div>
 
               {weeklyForecast.length === 0 ? (
-                <div style={{ color: 'rgba(255,255,255,0.6)' }}>No weekly forecast available.</div>
+                <div style={{ color: 'rgba(255,255,255,0.6)' }}>Loading weekly forecast...</div>
               ) : (
                 <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
                   {weeklyForecast.map((day, i) => (
