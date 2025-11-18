@@ -5,7 +5,7 @@ import GlassCard from '../components/GlassCard';
 
 export default function WeatherPage() {
 
-  const [currentWeather, setCurrentWeather] = useState({
+  const [weather, setWeather] = useState({
     emoji: '',
     condition: '',
     temperature: null,
@@ -62,19 +62,19 @@ export default function WeatherPage() {
                       flexWrap: 'wrap',
                     }}
                   >
-                    <div style={{ fontSize: '6rem' }}>{currentWeather.emoji}</div>
+                    <div style={{ fontSize: '6rem' }}>{weather.emoji}</div>
                     <div>
                       <div style={{ fontSize: '4rem', color: 'white' }}>
-                        {formatValue(currentWeather.temperature)}°
+                        {formatValue(weather.temperature)}°
                       </div>
                       <div style={{ color: 'rgba(255,255,255,0.6)' }}>
-                        Feels like {formatValue(currentWeather.feelsLike)}°
+                        Feels like {formatValue(weather.feelsLike)}°
                       </div>
                     </div>
                   </div>
 
                   <div style={{ fontSize: '2rem', marginBottom: 8 }}>
-                    {currentWeather.condition || 'Loading weather...'}
+                    {weather.condition || 'Loading weather...'}
                   </div>
                   <div
                     style={{
@@ -86,11 +86,11 @@ export default function WeatherPage() {
                   >
                     <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
                       <Sunrise size={16} />
-                      <span>{currentWeather.sunrise || '--.--'}</span>
+                      <span>{weather.sunrise || '--.--'}</span>
                     </div>
                     <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
                       <Sunset size={16} />
-                      <span>{currentWeather.sunset || '--.--'}</span>
+                      <span>{weather.sunset || '--.--'}</span>
                     </div>
                   </div>
                 </div>
@@ -106,22 +106,22 @@ export default function WeatherPage() {
                   {[
                     {
                       label: 'Humidity',
-                      value: `${formatValue(currentWeather.humidity, '--')}%`,
+                      value: `${formatValue(weather.humidity, '--')}%`,
                       icon: <Droplets size={16} color="#60a5fa" />,
                     },
                     {
                       label: 'Wind Speed',
-                      value: `${formatValue(currentWeather.windSpeed, '--')} mph`,
+                      value: `${formatValue(weather.windSpeed, '--')} mph`,
                       icon: <Wind size={16} color="#34d399" />,
                     },
                     {
                       label: 'Visibility',
-                      value: `${formatValue(currentWeather.visibility, '--')} mi`,
+                      value: `${formatValue(weather.visibility, '--')} mi`,
                       icon: <Eye size={16} color="#a78bfa" />,
                     },
                     {
                       label: 'Pressure',
-                      value: `${formatValue(currentWeather.pressure, '--')} mb`,
+                      value: `${formatValue(weather.pressure, '--')} mb`,
                       icon: <Gauge size={16} color="#facc15" />,
                     },
                   ].map((item, i) => (

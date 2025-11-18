@@ -14,8 +14,8 @@ export default function NasaPhotoPage() {
 
   const [recentPhotos, setRecentPhotos] = useState([]);
 
-  const isPhotoLoaded = photoData.url !== '';
-  const areRecentPhotosLoaded = recentPhotos.length > 0;
+  const photoLoaded = photoData.url !== '';
+  const recentPhotosLoaded = recentPhotos.length > 0;
 
   return (
     <PageShell title="NASA Photo of the Day" subtitle="Explore the cosmos through NASA's lens">
@@ -23,7 +23,7 @@ export default function NasaPhotoPage() {
 
         {/* Main Photo */}
         <GlassCard style={{ padding: 16 }}>
-          {isPhotoLoaded ? (
+          {photoLoaded ? (
             <>
               <div style={{ marginBottom: 8 }}>
                 <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'start' }}>
@@ -63,7 +63,7 @@ export default function NasaPhotoPage() {
         <GlassCard style={{ padding: 16 }}>
           <h2 style={{ color: 'white', fontSize: '1.25rem', marginBottom: 8 }}>Recent Photos</h2>
           <div style={{ display: 'grid', gap: 12, gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))' }}>
-            {areRecentPhotosLoaded ? (
+            {recentPhotosLoaded ? (
               recentPhotos.map((photo) => (
                 <div key={photo.id} style={{ borderRadius: 8, overflow: 'hidden', background: 'rgba(255,255,255,0.05)', cursor: 'pointer', transition: '0.3s' }}>
                   <div style={{ aspectRatio: '16/9', overflow: 'hidden' }}>
