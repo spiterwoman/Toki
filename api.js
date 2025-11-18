@@ -1031,7 +1031,7 @@ app.post('/api/viewGarages', async(req,res)=>{
 		  .sort({garageName:1})
 		  .toArray();
 
-		  ret = { success: true, sortedGarages, error: '', accessToken};
+		  ret = { success: true, garages, error: '', accessToken};
 
       if (!garages) {
         return res.status(200).json({
@@ -1412,4 +1412,5 @@ function generateRandomPassword(length = 12)
 }
 
         
+
 
