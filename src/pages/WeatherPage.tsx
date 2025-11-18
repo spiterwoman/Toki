@@ -1,3 +1,4 @@
+import { useState } from 'react';
 import { Sunrise, Sunset, Calendar, Droplets, Wind, Eye, Gauge } from 'lucide-react';
 import PageShell from '../components/PageShell';
 import GlassCard from '../components/GlassCard';
@@ -34,6 +35,25 @@ const mockWeatherData = {
 };
 
 export default function WeatherPage() {
+
+  const [currentWeather, setCurrentWeather] = useState({
+    emoji: '',
+    condition: '',
+    temperature: null,
+    feelsLike: null,
+    humidity: null,
+    windSpeed: null,
+    visibility: null,
+    pressure: null,
+    sunrise: '',
+    sunset: '',
+  });
+
+  const [hourlyForecast, setHourlyForecast] = useState([]);
+  const [weeklyForecast, setWeeklyForecast] = useState([]);
+
+  const formatValue = (value, placeholder = '--') => value !== null && value !== undefined ? value : placeholder;
+
   return (
     <>
       <style>
@@ -47,7 +67,7 @@ export default function WeatherPage() {
         `}
       </style>
 
-      <PageShell title="Weather" subtitle="Orlando, Florida">
+      <PageShell title="Weather" subtitle="Orlando, Florida"> {/* location? */}
         <div className="vstack" style={{ gap: 24, paddingTop: 24 }}>
           <div className="vstack" style={{ gap: 24 }}>
             {/* CURRENT WEATHER */}
@@ -73,19 +93,19 @@ export default function WeatherPage() {
                       flexWrap: 'wrap',
                     }}
                   >
-                    <div style={{ fontSize: '6rem' }}>{mockWeatherData.current.emoji}</div>
+                    <div style={{ fontSize: '6rem' }}>{currentWeather.emoji}</div>
                     <div>
                       <div style={{ fontSize: '4rem', color: 'white' }}>
-                        {mockWeatherData.current.temperature}°
+                        {formatValue(currentWeather.temperature)}°
                       </div>
                       <div style={{ color: 'rgba(255,255,255,0.6)' }}>
-                        Feels like {mockWeatherData.current.feelsLike}°
+                        Feels like {formatValue(currentWeather.feelsLike)}°
                       </div>
                     </div>
                   </div>
 
                   <div style={{ fontSize: '2rem', marginBottom: 8 }}>
-                    {mockWeatherData.current.condition}
+                    {currentWeather.condition || 'Loading weather...'}
                   </div>
                   <div
                     style={{
@@ -97,11 +117,11 @@ export default function WeatherPage() {
                   >
                     <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
                       <Sunrise size={16} />
-                      <span>{mockWeatherData.current.sunrise}</span>
+                      <span>{currentWeather.sunrise || '--.--'}</span>
                     </div>
                     <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
                       <Sunset size={16} />
-                      <span>{mockWeatherData.current.sunset}</span>
+                      <span>{currentWeather.sunset || '--.--'}</span>
                     </div>
                   </div>
                 </div>
@@ -117,22 +137,22 @@ export default function WeatherPage() {
                   {[
                     {
                       label: 'Humidity',
-                      value: `${mockWeatherData.current.humidity}%`,
+                      value: `${formatValue(currentWeather.humidity, '--')}%`,
                       icon: <Droplets size={16} color="#60a5fa" />,
                     },
                     {
                       label: 'Wind Speed',
-                      value: `${mockWeatherData.current.windSpeed} mph`,
+                      value: `${formatValue(currentWeather.windSpeed, '--')} mph`,
                       icon: <Wind size={16} color="#34d399" />,
                     },
                     {
                       label: 'Visibility',
-                      value: `${mockWeatherData.current.visibility} mi`,
+                      value: `${formatValue(currentWeather.visibility, '--')} mi`,
                       icon: <Eye size={16} color="#a78bfa" />,
                     },
                     {
                       label: 'Pressure',
-                      value: `${mockWeatherData.current.pressure} mb`,
+                      value: `${formatValue(currentWeather.pressure, '--')} mb`,
                       icon: <Gauge size={16} color="#facc15" />,
                     },
                   ].map((item, i) => (
@@ -165,41 +185,45 @@ export default function WeatherPage() {
             {/* HOURLY FORECAST */}
             <GlassCard style={{ padding: 24, marginBottom: 24 }}>
               <div style={{ fontWeight: 'bold' }}>Hourly Forecast</div>
-              <div
-                style={{
-                  display: 'flex',
-                  gap: 16,
-                  overflowX: 'auto',
-                  paddingBottom: 8,
-                  marginTop: 16,
-                }}
-              >
-                {mockWeatherData.hourly.map((hour, i) => (
-                  <div
-                    key={i}
-                    style={{
-                      background: 'rgba(255,255,255,0.05)',
-                      borderRadius: 12,
-                      padding: 16,
-                      textAlign: 'center',
-                      minWidth: 100,
-                      transition: 'background 0.2s',
-                    }}
-                    onMouseEnter={(e) =>
-                      (e.currentTarget.style.background = 'rgba(255,255,255,0.1)')
-                    }
-                    onMouseLeave={(e) =>
-                      (e.currentTarget.style.background = 'rgba(255,255,255,0.05)')
-                    }
-                  >
-                    <div style={{ color: 'rgba(255,255,255,0.6)', marginBottom: 8 }}>
-                      {hour.time}
+              {hourlyForecast.length === 0 ? (
+                <div style={{ marginTop: 16, color: 'rgba(255,255,255,0.6)' }}>No hourly forecast available.</div>
+              ) : (
+                <div
+                  style={{
+                    display: 'flex',
+                    gap: 16,
+                    overflowX: 'auto',
+                    paddingBottom: 8,
+                    marginTop: 16,
+                  }}
+                >
+                  {hourlyForecast.map((hour, i) => (
+                    <div
+                      key={i}
+                      style={{
+                        background: 'rgba(255,255,255,0.05)',
+                        borderRadius: 12,
+                        padding: 16,
+                        textAlign: 'center',
+                        minWidth: 100,
+                        transition: 'background 0.2s',
+                      }}
+                      onMouseEnter={(e) =>
+                        (e.currentTarget.style.background = 'rgba(255,255,255,0.1)')
+                      }
+                      onMouseLeave={(e) =>
+                        (e.currentTarget.style.background = 'rgba(255,255,255,0.05)')
+                      }
+                    >
+                      <div style={{ color: 'rgba(255,255,255,0.6)', marginBottom: 8 }}>
+                        {hour.time}
+                      </div>
+                      <div style={{ fontSize: '2rem', marginBottom: 8 }}>{hour.emoji}</div>
+                      <div style={{ fontSize: '1.25rem', color: 'white' }}>{hour.temp}°</div>
                     </div>
-                    <div style={{ fontSize: '2rem', marginBottom: 8 }}>{hour.emoji}</div>
-                    <div style={{ fontSize: '1.25rem', color: 'white' }}>{hour.temp}°</div>
-                  </div>
-                ))}
-              </div>
+                  ))}
+                </div>
+              )}
             </GlassCard>
 
             {/* WEEKLY FORECAST */}
@@ -217,45 +241,49 @@ export default function WeatherPage() {
                 7-Day Forecast
               </div>
 
-              <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
-                {mockWeatherData.weekly.map((day, i) => (
-                  <div
-                    key={i}
-                    style={{
-                      display: 'flex',
-                      justifyContent: 'space-between',
-                      alignItems: 'center',
-                      background: 'rgba(255,255,255,0.05)',
-                      borderRadius: 12,
-                      padding: 16,
-                      transition: 'background 0.2s',
-                    }}
-                    onMouseEnter={(e) =>
-                      (e.currentTarget.style.background = 'rgba(255,255,255,0.1)')
-                    }
-                    onMouseLeave={(e) =>
-                      (e.currentTarget.style.background = 'rgba(255,255,255,0.05)')
-                    }
-                  >
-                    <div style={{ display: 'flex', alignItems: 'center', gap: 16 }}>
-                      <div style={{ width: 48 }}>{day.day}</div>
-                      <div style={{ fontSize: '1.5rem' }}>{day.emoji}</div>
-                    </div>
-                    <div style={{ display: 'flex', gap: 24 }}>
-                      <div style={{ display: 'flex', gap: 4 }}>
-                        <span style={{ color: 'rgba(255,255,255,0.6)', fontSize: 14 }}>High</span>
-                        <span style={{ color: 'white', fontSize: 16 }}>{day.high}°</span>
+              {weeklyForecast.length === 0 ? (
+                <div style={{ color: 'rgba(255,255,255,0.6)' }}>No weekly forecast available.</div>
+              ) : (
+                <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+                  {weeklyForecast.map((day, i) => (
+                    <div
+                      key={i}
+                      style={{
+                        display: 'flex',
+                        justifyContent: 'space-between',
+                        alignItems: 'center',
+                        background: 'rgba(255,255,255,0.05)',
+                        borderRadius: 12,
+                        padding: 16,
+                        transition: 'background 0.2s',
+                      }}
+                      onMouseEnter={(e) =>
+                        (e.currentTarget.style.background = 'rgba(255,255,255,0.1)')
+                      }
+                      onMouseLeave={(e) =>
+                        (e.currentTarget.style.background = 'rgba(255,255,255,0.05)')
+                      }
+                    >
+                      <div style={{ display: 'flex', alignItems: 'center', gap: 16 }}>
+                        <div style={{ width: 48 }}>{day.day}</div>
+                        <div style={{ fontSize: '1.5rem' }}>{day.emoji}</div>
                       </div>
-                      <div style={{ display: 'flex', gap: 4 }}>
-                        <span style={{ color: 'rgba(255,255,255,0.6)', fontSize: 14 }}>Low</span>
-                        <span style={{ color: 'rgba(255,255,255,0.6)', fontSize: 16 }}>
-                          {day.low}°
-                        </span>
+                      <div style={{ display: 'flex', gap: 24 }}>
+                        <div style={{ display: 'flex', gap: 4 }}>
+                          <span style={{ color: 'rgba(255,255,255,0.6)', fontSize: 14 }}>High</span>
+                          <span style={{ color: 'white', fontSize: 16 }}>{day.high}°</span>
+                        </div>
+                        <div style={{ display: 'flex', gap: 4 }}>
+                          <span style={{ color: 'rgba(255,255,255,0.6)', fontSize: 14 }}>Low</span>
+                          <span style={{ color: 'rgba(255,255,255,0.6)', fontSize: 16 }}>
+                            {day.low}°
+                          </span>
+                        </div>
                       </div>
                     </div>
-                  </div>
-                ))}
-              </div>
+                  ))}
+                </div>
+              )}
             </GlassCard>
           </div>
         </div>
