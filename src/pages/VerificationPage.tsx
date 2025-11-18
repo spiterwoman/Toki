@@ -6,7 +6,7 @@ import { Button } from "../components/ui/button";
 import { InputOTP, InputOTPGroup, InputOTPSlot } from "../components/ui/input-otp";
 
 interface VerificationPageProps {
-  onVerify: () => void;
+  onVerify: () => boolean | void;
 }
 
 export default function VerificationPage({ onVerify }: VerificationPageProps) {
@@ -23,14 +23,12 @@ export default function VerificationPage({ onVerify }: VerificationPageProps) {
   const handleVerify = () => {
     if (otp.length === 6) {
       const success = onVerify();
-      
-      // If verification failed, refocus the input
-      if(!success){
+      if (success === false) {
         otpRef.current?.focus();
       }
-    } else {
-      otpRef.current?.focus();
+      return;
     }
+    otpRef.current?.focus();
   };
 
   return (
