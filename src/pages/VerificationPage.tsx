@@ -4,17 +4,21 @@ import GlassCard from "../components/GlassCard";
 import PageShell from "../components/PageShell";
 import { Button } from "../components/ui/button";
 import { InputOTP, InputOTPGroup, InputOTPSlot } from "../components/ui/input-otp";
+import { useNavigate, useLocation} from "react-router-dom"
 
-interface VerificationPageProps {
-  email: string;
-  onSuccess: () => void;
-}
-
-export default function VerificationPage({ email, onSuccess }: VerificationPageProps) {
+export default function VerificationPage() {
   const [otp, setOtp] = useState('');
   const [errorMsg, setErrorMsg] = useState('');
   const [loading, setLoading] = useState(false);
   const otpRef = useRef<HTMLInputElement>(null);
+
+  const location = useLocation();
+  const navigate = useNavigate();
+  const email = location.state?.email || "";
+
+  const handleSuccess = () => {
+    navigate("/daily-summary");
+  }
 
   useEffect(() => {
     // Focus the OTP input on mount
@@ -47,7 +51,7 @@ export default function VerificationPage({ email, onSuccess }: VerificationPageP
       const data = await res.json();
 
       if (data.error === "success, send to Dashboard page") {
-        onSuccess();
+        handleSuccess();
       } else if (data.error === "The JWT is no longer valid") {
         setErrorMsg("Your session expired. Please log in again.");
       } else {
