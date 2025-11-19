@@ -3,8 +3,23 @@ import PageShell from '../components/PageShell';
 import GlassCard from '../components/GlassCard';
 import { Camera, Calendar, Info } from 'lucide-react';
 
+type NasaPhoto = {
+  title: string;
+  date: string;
+  explanation: string;
+  url: string;
+  copyright: string;
+};
+
+type RecentPhoto = {
+  id: string | number;
+  title: string;
+  date: string;
+  thumbnail: string;
+};
+
 export default function NasaPhotoPage() {
-  const [photoData, setPhotoData] = useState({
+  const [photoData] = useState<NasaPhoto>({
     title: '',
     date: '',
     explanation: '',
@@ -12,7 +27,7 @@ export default function NasaPhotoPage() {
     copyright: ''
   });
 
-  const [recentPhotos, setRecentPhotos] = useState([]);
+  const [recentPhotos] = useState<RecentPhoto[]>([]);
 
   const photoLoaded = photoData.url !== '';
   const recentPhotosLoaded = recentPhotos.length > 0;
