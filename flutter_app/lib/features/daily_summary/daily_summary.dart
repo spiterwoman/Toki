@@ -15,15 +15,8 @@ class DailySummaryPage extends StatefulWidget {
 }
 
 class _DailySummaryPageState extends State<DailySummaryPage> {
-  // Weather is still static for now
-  final _weather = const {
-    'emoji': '☀️',
-    'condition': 'Sunny',
-    'high': 82,
-    'low': 68,
-    'sunrise': '7:12 AM',
-    'sunset': '7:45 PM',
-  };
+  // Weather from backend
+  _SummaryWeather? _weather;
 
   // State from backend
   List<_Task> _tasks = [];
@@ -54,6 +47,7 @@ class _DailySummaryPageState extends State<DailySummaryPage> {
 
     try {
       await Future.wait([
+        _loadWeatherFromServer(),
         _loadTasksFromServer(),
         _loadRemindersFromServer(),
         _loadCalendarEventsFromServer(),
@@ -75,6 +69,25 @@ class _DailySummaryPageState extends State<DailySummaryPage> {
 
   bool _sameDay(DateTime a, DateTime b) =>
       a.year == b.year && a.month == b.month && a.day == b.day;
+
+  // ---- Weather: /api/viewWeather ---------------------------------------
+
+  Future<void> _loadWeatherFromServer() async {
+    try {
+      final map = await api.viewWeather(); // returns "weather" map
+      final w = _SummaryWeather.fromJson(map);
+
+      if (!mounted) return;
+      setState(() {
+        _weather = w;
+      });
+    } catch (e) {
+      if (!mounted) return;
+      setState(() {
+        _error ??= 'Failed to load weather: $e';
+      });
+    }
+  }
 
   // ---- Tasks: /api/viewTask --------------------------------------------
 
@@ -402,89 +415,168 @@ class _DailySummaryPageState extends State<DailySummaryPage> {
   // ===== cards ==========================================================
 
   Widget _buildWeatherCard(BuildContext context) {
+    final w = _weather;
+
     return GlassCard(
       child: Padding(
         padding: const EdgeInsets.all(16),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Row(
-              children: [
-                Icon(Icons.cloud, color: Colors.lightBlue[300], size: 20),
-                const SizedBox(width: 8),
-                const Text(
-                  "Today's Weather",
-                  style: TextStyle(fontWeight: FontWeight.bold),
-                ),
-              ],
-            ),
-            const SizedBox(height: 12),
-            Column(
-              mainAxisAlignment: MainAxisAlignment.center,
-              children: [
-                Text(
-                  _weather['emoji'] as String,
-                  style: const TextStyle(fontSize: 48),
-                ),
-                const SizedBox(height: 8),
-                Text(_weather['condition'] as String),
-                const SizedBox(height: 8),
-                Row(
-                  mainAxisAlignment: MainAxisAlignment.center,
-                  children: [
-                    Column(
-                      children: [
-                        const Text('High'),
-                        Text(
-                          '${_weather['high']}°',
-                          style: const TextStyle(fontSize: 20),
-                        ),
-                      ],
-                    ),
-                    const SizedBox(width: 24),
-                    Column(
-                      children: [
-                        const Text('Low'),
-                        Text(
-                          '${_weather['low']}°',
-                          style: const TextStyle(fontSize: 20),
-                        ),
-                      ],
-                    ),
-                  ],
-                ),
-                const SizedBox(height: 12),
-                DefaultTextStyle(
-                  style: Theme.of(context)
-                          .textTheme
-                          .bodySmall
-                          ?.copyWith(color: Colors.grey) ??
-                      const TextStyle(fontSize: 12, color: Colors.grey),
-                  child: Row(
-                    mainAxisAlignment: MainAxisAlignment.center,
+        child: w == null
+            ? Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Row(
                     children: [
-                      Row(
-                        children: [
-                          const Icon(Icons.wb_sunny_outlined, size: 16),
-                          const SizedBox(width: 4),
-                          Text(_weather['sunrise'] as String),
-                        ],
-                      ),
-                      const SizedBox(width: 24),
-                      Row(
-                        children: [
-                          const Icon(Icons.nights_stay_outlined, size: 16),
-                          const SizedBox(width: 4),
-                          Text(_weather['sunset'] as String),
-                        ],
+                      Icon(Icons.cloud,
+                          color: Colors.lightBlue[300], size: 20),
+                      const SizedBox(width: 8),
+                      const Text(
+                        "Today's Weather",
+                        style: TextStyle(fontWeight: FontWeight.bold),
                       ),
                     ],
                   ),
-                ),
-              ],
-            ),
-          ],
-        ),
+                  const SizedBox(height: 16),
+                  Text(
+                    'Weather data unavailable.',
+                    style: TextStyle(
+                      color: Theme.of(context)
+                          .textTheme
+                          .bodySmall
+                          ?.color
+                          ?.withOpacity(0.7),
+                    ),
+                  ),
+                ],
+              )
+            : Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Row(
+                    children: [
+                      Icon(Icons.cloud,
+                          color: Colors.lightBlue[300], size: 20),
+                      const SizedBox(width: 8),
+                      const Text(
+                        "Today's Weather",
+                        style: TextStyle(fontWeight: FontWeight.bold),
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 12),
+                  Column(
+                    mainAxisAlignment: MainAxisAlignment.center,
+                    children: [
+                      Text(
+                        w.emoji,
+                        style: const TextStyle(fontSize: 48),
+                      ),
+                      const SizedBox(height: 8),
+                      Text(w.forecast),
+                      const SizedBox(height: 8),
+                      Row(
+                        mainAxisAlignment: MainAxisAlignment.center,
+                        children: [
+                          Column(
+                            children: [
+                              const Text('High'),
+                              Text(
+                                '${w.high}°',
+                                style: const TextStyle(fontSize: 20),
+                              ),
+                            ],
+                          ),
+                          const SizedBox(width: 24),
+                          Column(
+                            children: [
+                              const Text('Low'),
+                              Text(
+                                '${w.low}°',
+                                style: const TextStyle(fontSize: 20),
+                              ),
+                            ],
+                          ),
+                        ],
+                      ),
+                      const SizedBox(height: 12),
+                      DefaultTextStyle(
+                        style: Theme.of(context)
+                                .textTheme
+                                .bodySmall
+                                ?.copyWith(color: Colors.grey) ??
+                            const TextStyle(fontSize: 12, color: Colors.grey),
+                        child: Column(
+                          children: [
+                            Row(
+                              mainAxisAlignment: MainAxisAlignment.center,
+                              children: [
+                                Row(
+                                  children: [
+                                    const Icon(
+                                        Icons.wb_sunny_outlined, size: 16),
+                                    const SizedBox(width: 4),
+                                    Text(w.sunrise),
+                                  ],
+                                ),
+                                const SizedBox(width: 24),
+                                Row(
+                                  children: [
+                                    const Icon(
+                                        Icons.nights_stay_outlined, size: 16),
+                                    const SizedBox(width: 4),
+                                    Text(w.sunset),
+                                  ],
+                                ),
+                              ],
+                            ),
+                            const SizedBox(height: 8),
+                            Row(
+                              mainAxisAlignment: MainAxisAlignment.center,
+                              children: [
+                                Row(
+                                  children: [
+                                    const Icon(Icons.water_drop,
+                                        size: 16, color: Color(0xFF60A5FA)),
+                                    const SizedBox(width: 4),
+                                    Text('${w.humid}%'),
+                                  ],
+                                ),
+                                const SizedBox(width: 16),
+                                Row(
+                                  children: [
+                                    const Icon(Icons.air,
+                                        size: 16, color: Color(0xFF34D399)),
+                                    const SizedBox(width: 4),
+                                    Text('${w.windSpeed} mph'),
+                                  ],
+                                ),
+                                const SizedBox(width: 16),
+                                Row(
+                                  children: [
+                                    const Icon(Icons.visibility,
+                                        size: 16, color: Color(0xFFA78BFA)),
+                                    const SizedBox(width: 4),
+                                    Text('${w.vis} mi'),
+                                  ],
+                                ),
+                              ],
+                            ),
+                            const SizedBox(height: 4),
+                            Row(
+                              mainAxisAlignment: MainAxisAlignment.center,
+                              children: [
+                                const Icon(Icons.speed,
+                                    size: 16, color: Color(0xFFFACC15)),
+                                const SizedBox(width: 4),
+                                Text('${w.pressure} mb'),
+                              ],
+                            ),
+                          ],
+                        ),
+                      ),
+                    ],
+                  ),
+                ],
+              ),
       ),
     );
   }
@@ -711,8 +803,7 @@ class _DailySummaryPageState extends State<DailySummaryPage> {
   }
 
   Widget _buildNasaPhotoCard(BuildContext context) {
-    final title = _nasaTitle ??
-        'NASA Astronomy Picture of the Day';
+    final title = _nasaTitle ?? 'NASA Astronomy Picture of the Day';
     final explanation = _nasaExplanation ??
         'A stunning view of the cosmos captured by NASA\'s telescopes.';
     final imageUrl = _nasaPhotoUrl;
@@ -881,6 +972,67 @@ class _Reminder {
       id: id,
       text: title,
       done: done,
+    );
+  }
+}
+
+// Weather summary model for the daily card
+class _SummaryWeather {
+  final String emoji;
+  final String forecast;
+  final int high;
+  final int low;
+  final String sunrise;
+  final String sunset;
+  final int humid;
+  final int vis;
+  final int pressure;
+  final int windSpeed;
+
+  _SummaryWeather({
+    required this.emoji,
+    required this.forecast,
+    required this.high,
+    required this.low,
+    required this.sunrise,
+    required this.sunset,
+    required this.humid,
+    required this.vis,
+    required this.pressure,
+    required this.windSpeed,
+  });
+
+  factory _SummaryWeather.fromJson(Map<String, dynamic> json) {
+    int _toInt(dynamic v) {
+      if (v == null) return 0;
+      if (v is int) return v;
+      if (v is double) return v.toInt();
+      return int.tryParse(v.toString()) ?? 0;
+    }
+
+    final forecast = json['forecast']?.toString() ?? '';
+
+    String _forecastToEmojiLocal(String forecast) {
+      final f = forecast.toLowerCase();
+      if (f.contains('storm') || f.contains('thunder')) return '⛈️';
+      if (f.contains('rain') || f.contains('shower')) return '🌧️';
+      if (f.contains('snow')) return '❄️';
+      if (f.contains('cloud')) return '⛅';
+      if (f.contains('sun') || f.contains('clear')) return '☀️';
+      return '☁️';
+    }
+
+    return _SummaryWeather(
+      emoji: _forecastToEmojiLocal(forecast),
+      forecast: forecast,
+      high: _toInt(json['high']),
+      low: _toInt(json['low']),
+      sunrise: json['sunrise']?.toString() ?? '',
+      sunset: json['sunset']?.toString() ?? '',
+      humid: _toInt(json['humid']),
+      vis: _toInt(json['vis']),
+      pressure: _toInt(json['pressure']),
+      windSpeed: _toInt(json['windSpeed']),
     );
   }
 }

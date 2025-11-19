@@ -2,46 +2,180 @@ import 'package:flutter/material.dart';
 
 import '../../core/widgets/page_shell.dart';
 import '../../core/widgets/glass_card.dart';
+import '../../core/api/api.dart';
 
-class WeatherPage extends StatelessWidget {
+// You can also inject this instead of using a global if you prefer
+final api = Api('https://mytoki.app');
+
+// === backend weather model =============================================
+
+class Weather {
+  final String location;
+  final int high;
+  final int low;
+  final String sunrise;
+  final String sunset;
+  final int humid;
+  final int vis;
+  final int pressure;
+  final int windSpeed;
+  final String forecast;
+  final String emoji;
+  final DateTime? lastUpdated;
+
+  Weather({
+    required this.location,
+    required this.high,
+    required this.low,
+    required this.sunrise,
+    required this.sunset,
+    required this.humid,
+    required this.vis,
+    required this.pressure,
+    required this.windSpeed,
+    required this.forecast,
+    required this.emoji,
+    required this.lastUpdated,
+  });
+
+  factory Weather.fromJson(Map<String, dynamic> json) {
+    int _toInt(dynamic v) {
+      if (v == null) return 0;
+      if (v is int) return v;
+      if (v is double) return v.toInt();
+      return int.tryParse(v.toString()) ?? 0;
+    }
+
+    DateTime? _toDate(dynamic v) {
+      if (v == null) return null;
+      if (v is DateTime) return v;
+      return DateTime.tryParse(v.toString());
+    }
+
+    final forecast = json['forecast']?.toString() ?? '';
+
+    return Weather(
+      location: json['location'] as String? ?? '',
+      high: _toInt(json['high']),
+      low: _toInt(json['low']),
+      sunrise: json['sunrise']?.toString() ?? '',
+      sunset: json['sunset']?.toString() ?? '',
+      humid: _toInt(json['humid']),
+      vis: _toInt(json['vis']),
+      pressure: _toInt(json['pressure']),
+      windSpeed: _toInt(json['windSpeed']),
+      forecast: forecast,
+      emoji: _forecastToEmoji(forecast),
+      lastUpdated: _toDate(json['lastUpdated']),
+    );
+  }
+}
+
+String _forecastToEmoji(String forecast) {
+  final f = forecast.toLowerCase();
+  if (f.contains('storm') || f.contains('thunder')) return '⛈️';
+  if (f.contains('rain') || f.contains('shower')) return '🌧️';
+  if (f.contains('snow')) return '❄️';
+  if (f.contains('cloud')) return '⛅';
+  if (f.contains('sun') || f.contains('clear')) return '☀️';
+  return '☁️';
+}
+
+// === page ==============================================================
+
+class WeatherPage extends StatefulWidget {
   const WeatherPage({super.key});
 
   @override
+  State<WeatherPage> createState() => _WeatherPageState();
+}
+
+class _WeatherPageState extends State<WeatherPage> {
+  Weather? _weather;
+  bool _loading = true;
+  String? _error;
+
+  @override
+  void initState() {
+    super.initState();
+    _loadWeather();
+  }
+
+  Future<void> _loadWeather() async {
+    setState(() {
+      _loading = true;
+      _error = null;
+    });
+
+    try {
+      // api.viewWeather() returns the `weather` map from the backend
+      final map = await api.viewWeather();
+      _weather = Weather.fromJson(map);
+    } catch (e) {
+      _error = 'Failed to load weather: $e';
+    }
+
+    if (mounted) {
+      setState(() {
+        _loading = false;
+      });
+    }
+  }
+
+  String _formatLastUpdated(DateTime? dt) {
+    if (dt == null) return '';
+    final t = TimeOfDay.fromDateTime(dt);
+    return 'Last updated: ${t.format(context)}';
+  }
+
+  @override
   Widget build(BuildContext context) {
-    const current = _CurrentWeather(
-      emoji: '☀️',
-      condition: 'Sunny',
-      temperature: 75,
-      feelsLike: 73,
-      humidity: 45,
-      windSpeed: 8,
-      visibility: 10,
-      pressure: 1013,
-      sunrise: '7:12 AM',
-      sunset: '7:45 PM',
+    if (_loading) {
+      return const PageShell(
+        title: 'Weather',
+        subtitle: 'Loading…',
+        child: Center(child: CircularProgressIndicator()),
+      );
+    }
+
+    if (_error != null || _weather == null) {
+      return PageShell(
+        title: 'Weather',
+        subtitle: 'Error',
+        child: Center(
+          child: Padding(
+            padding: const EdgeInsets.all(24.0),
+            child: Text(
+              _error ?? 'Unknown error loading weather.',
+              style: const TextStyle(color: Colors.redAccent),
+              textAlign: TextAlign.center,
+            ),
+          ),
+        ),
+      );
+    }
+
+    final w = _weather!;
+
+    // Map backend Weather -> UI model
+    final current = _CurrentWeather(
+      emoji: w.emoji,
+      condition: w.forecast,
+      high: w.high,
+      low: w.low,
+      humidity: w.humid,
+      windSpeed: w.windSpeed,
+      visibility: w.vis,
+      pressure: w.pressure,
+      sunrise: w.sunrise,
+      sunset: w.sunset,
     );
 
-    const hourly = <_HourlyWeather>[
-      _HourlyWeather(time: '9 AM', temp: 72, emoji: '☀️'),
-      _HourlyWeather(time: '12 PM', temp: 78, emoji: '☀️'),
-      _HourlyWeather(time: '3 PM', temp: 82, emoji: '🌤️'),
-      _HourlyWeather(time: '6 PM', temp: 76, emoji: '🌤️'),
-      _HourlyWeather(time: '9 PM', temp: 70, emoji: '🌙'),
-    ];
-
-    const weekly = <_DailyWeather>[
-      _DailyWeather(day: 'Mon', high: 82, low: 68, emoji: '☀️'),
-      _DailyWeather(day: 'Tue', high: 79, low: 66, emoji: '⛅'),
-      _DailyWeather(day: 'Wed', high: 75, low: 64, emoji: '🌧️'),
-      _DailyWeather(day: 'Thu', high: 73, low: 62, emoji: '🌧️'),
-      _DailyWeather(day: 'Fri', high: 76, low: 65, emoji: '⛅'),
-      _DailyWeather(day: 'Sat', high: 80, low: 67, emoji: '☀️'),
-      _DailyWeather(day: 'Sun', high: 83, low: 69, emoji: '☀️'),
-    ];
+    final lastUpdatedText = _formatLastUpdated(w.lastUpdated);
 
     return PageShell(
       title: 'Weather',
-      subtitle: 'Orlando, Florida',
+      subtitle: w.location.isNotEmpty ? w.location : 'Orlando, Florida',
       child: SingleChildScrollView(
         padding: const EdgeInsets.fromLTRB(24, 24, 24, 24),
         child: Column(
@@ -80,70 +214,22 @@ class WeatherPage extends StatelessWidget {
               },
             ),
 
-            const SizedBox(height: 24),
-
-            // HOURLY FORECAST
-            GlassCard(
-              child: Padding(
-                padding: const EdgeInsets.all(24),
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    const Text(
-                      'Hourly Forecast',
-                      style: TextStyle(fontWeight: FontWeight.bold),
-                    ),
-                    const SizedBox(height: 16),
-                    SizedBox(
-                      height: 160,
-                      child: ListView.separated(
-                        scrollDirection: Axis.horizontal,
-                        itemCount: hourly.length,
-                        separatorBuilder: (_, __) => const SizedBox(width: 16),
-                        itemBuilder: (context, index) {
-                          final h = hourly[index];
-                          return _HourlyCard(hour: h);
-                        },
-                      ),
-                    ),
-                  ],
+            if (lastUpdatedText.isNotEmpty) ...[
+              const SizedBox(height: 12),
+              Align(
+                alignment: Alignment.centerRight,
+                child: Text(
+                  lastUpdatedText,
+                  style: TextStyle(
+                    color: Theme.of(context)
+                        .textTheme
+                        .bodySmall
+                        ?.color
+                        ?.withOpacity(0.7),
+                  ),
                 ),
               ),
-            ),
-
-            const SizedBox(height: 24),
-
-            // WEEKLY FORECAST
-            GlassCard(
-              child: Padding(
-                padding: const EdgeInsets.all(24),
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Row(
-                      children: const [
-                        Icon(Icons.calendar_month, size: 20, color: Colors.white),
-                        SizedBox(width: 8),
-                        Text(
-                          '7-Day Forecast',
-                          style: TextStyle(fontWeight: FontWeight.bold),
-                        ),
-                      ],
-                    ),
-                    const SizedBox(height: 16),
-                    Column(
-                      children: weekly
-                          .map((d) => Padding(
-                                padding:
-                                    const EdgeInsets.symmetric(vertical: 6.0),
-                                child: _DailyRow(day: d),
-                              ))
-                          .toList(),
-                    ),
-                  ],
-                ),
-              ),
-            ),
+            ],
           ],
         ),
       ),
@@ -156,8 +242,8 @@ class WeatherPage extends StatelessWidget {
 class _CurrentWeather {
   final String emoji;
   final String condition;
-  final int temperature;
-  final int feelsLike;
+  final int high;
+  final int low;
   final int humidity;
   final int windSpeed;
   final int visibility;
@@ -168,40 +254,14 @@ class _CurrentWeather {
   const _CurrentWeather({
     required this.emoji,
     required this.condition,
-    required this.temperature,
-    required this.feelsLike,
+    required this.high,
+    required this.low,
     required this.humidity,
     required this.windSpeed,
     required this.visibility,
     required this.pressure,
     required this.sunrise,
     required this.sunset,
-  });
-}
-
-class _HourlyWeather {
-  final String time;
-  final int temp;
-  final String emoji;
-
-  const _HourlyWeather({
-    required this.time,
-    required this.temp,
-    required this.emoji,
-  });
-}
-
-class _DailyWeather {
-  final String day;
-  final int high;
-  final int low;
-  final String emoji;
-
-  const _DailyWeather({
-    required this.day,
-    required this.high,
-    required this.low,
-    required this.emoji,
   });
 }
 
@@ -232,16 +292,31 @@ class _CurrentWeatherLeft extends StatelessWidget {
             Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Text(
-                  '${current.temperature}°',
-                  style: const TextStyle(
-                    fontSize: 64,
-                    color: Colors.white,
-                  ),
+                // Show high + low instead of fake "feels like"
+                Row(
+                  crossAxisAlignment: CrossAxisAlignment.end,
+                  children: [
+                    Text(
+                      '${current.high}°',
+                      style: const TextStyle(
+                        fontSize: 64,
+                        color: Colors.white,
+                      ),
+                    ),
+                    const SizedBox(width: 8),
+                    Text(
+                      'High',
+                      style: TextStyle(
+                        color: muted,
+                        fontSize: 16,
+                      ),
+                    ),
+                  ],
                 ),
+                const SizedBox(height: 4),
                 Text(
-                  'Feels like ${current.feelsLike}°',
-                  style: TextStyle(color: muted),
+                  'Low ${current.low}°',
+                  style: TextStyle(color: muted, fontSize: 16),
                 ),
               ],
             ),
@@ -359,130 +434,6 @@ class _CurrentWeatherStats extends StatelessWidget {
           ),
         );
       }).toList(),
-    );
-  }
-}
-
-// === hourly & weekly widgets ==========================================
-
-class _HourlyCard extends StatelessWidget {
-  final _HourlyWeather hour;
-
-  const _HourlyCard({required this.hour});
-
-  @override
-  Widget build(BuildContext context) {
-    final muted = Colors.white.withOpacity(0.6);
-
-    return Container(
-      width: 100,
-      padding: const EdgeInsets.all(16),
-      decoration: BoxDecoration(
-        borderRadius: BorderRadius.circular(12),
-        color: Colors.white.withOpacity(0.05),
-      ),
-      child: Column(
-        mainAxisAlignment: MainAxisAlignment.center,
-        children: [
-          Text(
-            hour.time,
-            style: TextStyle(color: muted),
-          ),
-          const SizedBox(height: 8),
-          Text(
-            hour.emoji,
-            style: const TextStyle(fontSize: 32),
-          ),
-          const SizedBox(height: 8),
-          Text(
-            '${hour.temp}°',
-            style: const TextStyle(
-              fontSize: 20,
-              color: Colors.white,
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-}
-
-class _DailyRow extends StatelessWidget {
-  final _DailyWeather day;
-
-  const _DailyRow({required this.day});
-
-  @override
-  Widget build(BuildContext context) {
-    final muted = Colors.white.withOpacity(0.6);
-
-    return Container(
-      padding: const EdgeInsets.all(16),
-      decoration: BoxDecoration(
-        borderRadius: BorderRadius.circular(12),
-        color: Colors.white.withOpacity(0.05),
-      ),
-      child: Row(
-        mainAxisAlignment: MainAxisAlignment.spaceBetween,
-        children: [
-          Row(
-            children: [
-              SizedBox(
-                width: 48,
-                child: Text(day.day),
-              ),
-              const SizedBox(width: 16),
-              Text(
-                day.emoji,
-                style: const TextStyle(fontSize: 24),
-              ),
-            ],
-          ),
-          Row(
-            children: [
-              Row(
-                children: [
-                  Text(
-                    'High',
-                    style: TextStyle(
-                      color: muted,
-                      fontSize: 14,
-                    ),
-                  ),
-                  const SizedBox(width: 4),
-                  Text(
-                    '${day.high}°',
-                    style: const TextStyle(
-                      color: Colors.white,
-                      fontSize: 16,
-                    ),
-                  ),
-                ],
-              ),
-              const SizedBox(width: 24),
-              Row(
-                children: [
-                  Text(
-                    'Low',
-                    style: TextStyle(
-                      color: muted,
-                      fontSize: 14,
-                    ),
-                  ),
-                  const SizedBox(width: 4),
-                  Text(
-                    '${day.low}°',
-                    style: TextStyle(
-                      color: muted,
-                      fontSize: 16,
-                    ),
-                  ),
-                ],
-              ),
-            ],
-          ),
-        ],
-      ),
     );
   }
 }

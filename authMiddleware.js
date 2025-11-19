@@ -3,7 +3,15 @@ require("dotenv").config({ path: './priv.env' });
 
 
 module.exports = function authMiddleware(req, res, next) {
-  const token = req.cookies.accessToken;
+  let token = req.cookies.accessToken;
+
+    // fallback to Authorization header for postman testing
+  if (!token && req.headers.authorization) {
+    const parts = req.headers.authorization.split(' ');
+    if (parts.length === 2 && parts[0] === 'Bearer') {
+      token = parts[1];
+    }
+  }
   if (!token) return res.status(401).json({ error: "Not authenticated" });
 
   try {

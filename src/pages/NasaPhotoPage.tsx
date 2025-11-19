@@ -126,7 +126,7 @@ export default function NasaPhotoPage() {
           </GlassCard>
 
         {/* Recent Photos */}
-        <GlassCard style={{ padding: 16 }}>
+        {/* <GlassCard style={{ padding: 16 }}>
           <h2 style={{ color: 'white', fontSize: '1.25rem', marginBottom: 8 }}>Recent Photos</h2>
           <div style={{ display: 'grid', gap: 12, gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))' }}>
             {recentPhotosLoaded ? (
@@ -145,7 +145,7 @@ export default function NasaPhotoPage() {
               <div style={{ color: 'rgba(255,255,255,0.6)' }}>Loading recent photos...</div>
             )}
           </div>
-        </GlassCard>
+        </GlassCard> */}
 
       </div>
     </PageShell>

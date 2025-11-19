@@ -25,8 +25,8 @@ type CurrentWeather = {
   sunset: string;
 };
 
-type Hourly = { time: string; emoji: string; temp: number | string };
-type Weekly = { day: string; emoji: string; high: number | string; low: number | string };
+// type Hourly = { time: string; emoji: string; temp: number | string };
+// type Weekly = { day: string; emoji: string; high: number | string; low: number | string };
 
 
 const formatValue = (
@@ -70,17 +70,20 @@ export default function WeatherPage() {
     sunset: "",
   });
 
-  const [hourlyForecast, setHourlyForecast] = useState<Hourly[]>([]);
-  const [weeklyForecast, setWeeklyForecast] = useState<Weekly[]>([]);
+  // const [hourlyForecast, setHourlyForecast] = useState<Hourly[]>([]);
+  // const [weeklyForecast, setWeeklyForecast] = useState<Weekly[]>([]);
 
   useEffect(() => {
     async function fetchWeather() {
       try {
+        const userId = localStorage.getItem("userId");
+        const accessToken = localStorage.getItem("accessToken");
+
         const res = await fetch("/api/viewWeather", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           credentials: "include", 
-          body: JSON.stringify({}),
+          body: JSON.stringify({userId, accessToken}),
         });
 
         if (!res.ok) {
@@ -111,17 +114,17 @@ export default function WeatherPage() {
 
         setWeather(nextWeather);
 
-        if (Array.isArray(w.hourly)) {
-          setHourlyForecast(w.hourly as Hourly[]);
-        } else {
-          setHourlyForecast([]);
-        }
+        // if (Array.isArray(w.hourly)) {
+        //   setHourlyForecast(w.hourly as Hourly[]);
+        // } else {
+        //   setHourlyForecast([]);
+        // }
 
-        if (Array.isArray(w.weekly)) {
-          setWeeklyForecast(w.weekly as Weekly[]);
-        } else {
-          setWeeklyForecast([]);
-        }
+        // if (Array.isArray(w.weekly)) {
+        //   setWeeklyForecast(w.weekly as Weekly[]);
+        // } else {
+        //   setWeeklyForecast([]);
+        // }
       } catch (err) {
         console.error("Failed to fetch weather data:", err);
       }
@@ -177,14 +180,14 @@ export default function WeatherPage() {
                       <div style={{ fontSize: "4rem", color: "white" }}>
                         {formatValue(weather.temperature)}°
                       </div>
-                      <div style={{ color: "rgba(255,255,255,0.6)" }}>
+                      {/* <div style={{ color: "rgba(255,255,255,0.6)" }}>
                         Feels like {formatValue(weather.feelsLike)}°
-                      </div>
+                      </div> */}
                     </div>
                   </div>
 
                   <div style={{ fontSize: "2rem", marginBottom: 8 }}>
-                    {weather.condition || "Loading weather..."}
+                    {weather.condition.replace(/\b\w/g, c => c.toUpperCase()) || "Loading weather..."}
                   </div>
                   <div
                     style={{
@@ -272,7 +275,7 @@ export default function WeatherPage() {
             </GlassCard>
 
             {/* HOURLY FORECAST */}
-            <GlassCard style={{ padding: 24, marginBottom: 24 }}>
+            {/* <GlassCard style={{ padding: 24, marginBottom: 24 }}>
               <div style={{ fontWeight: "bold" }}>Hourly Forecast</div>
               {hourlyForecast.length === 0 ? (
                 <div
@@ -335,10 +338,10 @@ export default function WeatherPage() {
                   ))}
                 </div>
               )}
-            </GlassCard>
+            </GlassCard> */}
 
             {/* WEEKLY FORECAST */}
-            <GlassCard style={{ padding: 24 }}>
+            {/* <GlassCard style={{ padding: 24 }}>
               <div
                 style={{
                   display: "flex",
@@ -438,7 +441,7 @@ export default function WeatherPage() {
                   ))}
                 </div>
               )}
-            </GlassCard>
+            </GlassCard> */}
           </div>
         </div>
       </PageShell>

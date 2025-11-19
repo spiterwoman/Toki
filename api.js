@@ -24,13 +24,11 @@ exports.setApp = function (app, client)
 {
 
   app.post('/api/addUser', async (req, res) => {
-
-    //all things needed from FE is in the const {}
     const { name, email, password } = req.body;
     const parts = name.trim().split(' ');
     const firstName = parts[0] || '';
     const lastName = parts.slice(1).join(' ') || '';
-
+    //all things needed from FE is in the const {}
     try 
     {
       // Check if user already exists
@@ -192,10 +190,9 @@ exports.setApp = function (app, client)
     {
       const db = client.db('tokidatabase');
       const user = await db.collection('users').findOne({ email });
-
       if (!user) 
         {
-        return res.status(200).json({ error: 'User not found' });
+        return res.status(400).json({ error: 'User not found' });
       }
 
       if (user.verificationToken === verificationToken) 
@@ -204,7 +201,7 @@ exports.setApp = function (app, client)
 
         await db.collection('users').updateOne(
           { _id: user._id },
-          { $set: { verificationToken: Math.floor(Math.random() * 900000) } }
+          { $set: { verificationToken: Math.floor(100000 + Math.random() * 900000) } }
         );
 
         console.log("should be sent to dashboard now");
@@ -598,6 +595,47 @@ exports.setApp = function (app, client)
 	
 	  res.status(200).json(ret);
   });
+
+  app.post('/api/completeTask', authMiddleware, async(req, res) => {
+
+    //this is all info passed from FE
+    const {title} = req.body;
+    const userId = req.userId; 
+    let ret = {};
+
+    try 
+    {
+      const db = client.db('tokidatabase');
+      const taskFound = await db.collection('tasks').findOne({
+	      userId: new ObjectId(userId),
+	      title: title
+      });
+	
+      if (!taskFound){
+	      return res.status(200).json({
+		      success: false,
+		      error: "tesk not found"
+	      });
+      }
+
+      const result = await db.collection('tasks').updateOne(
+        {  _id: new ObjectId(taskFound._id) },
+        { $set: { "completed.isCompleted": true, "completed.completedAt": new Date()} }
+      );
+
+      if (result.matchedCount > 0){ 
+        ret = { success: true, error: "task set to completed" };
+    }  else
+	  {
+	
+	ret = { success: false, error: "task not completed" };
+    } 
+    }  catch (e) { 
+      ret = { success: false, error: e.toString() };
+    }
+
+    res.status(200).json(ret);
+  });  
 
   app.post('/api/deleteTask',authMiddleware,  async (req, res) => {
 	  // incoming: userId, accessToken, taskId
@@ -1022,7 +1060,7 @@ setInterval(updateAPOD, 24 * 60 * 1000);
 
 //dont think we are doing this now
 // Get recent APOD documents 
-/*
+
 app.post('/api/recentAPODs', async (req, res) => {
   const { accessToken, limit } = req.body;
   let ret = {};
@@ -1080,7 +1118,7 @@ app.post('/api/recentAPODs', async (req, res) => {
 
   res.status(200).json(ret);
 }); 
-*/
+
 
 
 
@@ -1124,7 +1162,7 @@ app.post('/api/recentAPODs', async (req, res) => {
           lastUpdated: weather.lastUpdated
         },
         error: '',
-        accessToken
+        
       };
 
     } catch (e) {
