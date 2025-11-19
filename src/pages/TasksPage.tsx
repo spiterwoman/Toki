@@ -10,6 +10,16 @@ import {
   DialogTrigger,
 } from "../components/ui/dialog";
 
+// helper: pull "HH:MM" out of a date/time string (and ignore 1970 placeholder)
+function extractTime(value: any): string | undefined {
+  if (!value || typeof value !== "string") return undefined;
+  const s = value.trim();
+  if (!s || s.startsWith("1970-01-01")) return undefined;
+
+  const match = s.match(/(\d{1,2}:\d{2})(?::\d{2})?/);
+  return match ? match[1] : undefined;
+}
+
 export default function TasksPage() {
   const [tasks, setTasks] = useState<Task[]>([]);
   const [title, setTitle] = useState("");
@@ -19,6 +29,9 @@ export default function TasksPage() {
   const [open, setOpen] = useState(false);
 
   const doneCount = tasks.filter((t) => t.done).length;
+
+  const badgeClass = (p?: Task["priority"]) =>
+    p === "high" ? "badge danger" : p === "medium" ? "badge warn" : "badge ok";
 
   // -----------------------------------
   // Load tasks from backend on mount
@@ -30,7 +43,7 @@ export default function TasksPage() {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           credentials: "include",
-          body: JSON.stringify({}), // blank title -> return all
+          body: JSON.stringify({}), // blank => all tasks
         });
 
         if (!res.ok) {
@@ -50,18 +63,24 @@ export default function TasksPage() {
           return;
         }
 
-        const mapped: Task[] = raw.map((t: any, index: number) => ({
-          id: t.taskId || t.id || t._id || `${t.title ?? "task"}-${index}`,
-          title: t.title ?? t.name ?? "",
-          time: t.dueDate || t.time || "",
-          tag: (t.tag as Task["tag"]) || "Work",
-          priority: (t.priority as Task["priority"]) || "medium",
-          done:
-            t.completed === true ||
-            t.done === true ||
-            t.status === "complete" ||
-            t.status === "completed",
-        }));
+        const mapped: Task[] = raw.map((t: any, index: number) => {
+          const isCompleted =
+            !!t.completed && t.completed.isCompleted === true;
+
+          const displayTime =
+            (typeof t.time === "string" && t.time.trim()) ||
+            extractTime(t.dueDate) ||
+            "";
+
+          return {
+            id: t.taskId || t.id || t._id || `${t.title ?? "task"}-${index}`,
+            title: t.title ?? t.name ?? "",
+            time: displayTime || undefined,
+            tag: (t.tag as Task["tag"]) || "Work",
+            priority: (t.priority as Task["priority"]) || "medium",
+            done: isCompleted,
+          };
+        });
 
         setTasks(mapped);
       } catch (err) {
@@ -71,9 +90,6 @@ export default function TasksPage() {
 
     loadTasks();
   }, []);
-
-  const badgeClass = (p?: Task["priority"]) =>
-    p === "high" ? "badge danger" : p === "medium" ? "badge warn" : "badge ok";
 
   // -----------------------------------
   // Create task
@@ -90,7 +106,14 @@ export default function TasksPage() {
 
     // optimistic local add
     setTasks((ts) => [
-      { id, title: trimmedTitle, time: time || undefined, tag, priority, done: false },
+      {
+        id,
+        title: trimmedTitle,
+        time: time || undefined,
+        tag,
+        priority,
+        done: false,
+      },
       ...ts,
     ]);
 
@@ -101,6 +124,7 @@ export default function TasksPage() {
         credentials: "include",
         body: JSON.stringify({
           title: trimmedTitle,
+          // backend is free to treat this as a pure time or a full datetime
           dueDate: time || "",
           tag,
           priority,
@@ -124,41 +148,50 @@ export default function TasksPage() {
   };
 
   // -----------------------------------
-  // Toggle complete
+  // Mark complete (one-way, like reminders)
   // -----------------------------------
   const toggle = async (id: string) => {
     const existing = tasks.find((t) => t.id === id);
     if (!existing) return;
 
-    const willBeDone = !existing.done;
+    // If already done, don't try to "un-complete" (no API for that)
+    if (existing.done) {
+      return;
+    }
 
-    // optimistic local toggle
+    // optimistic local mark as done
     setTasks((ts) =>
-      ts.map((t) => (t.id === id ? { ...t, done: willBeDone } : t))
+      ts.map((t) => (t.id === id ? { ...t, done: true } : t))
     );
 
+    console.log("Marking task complete (optimistic):", existing.title);
+
     try {
-      // ignore taskId for now, per backend note
-      const res = await fetch("/api/editTask", {
+      const res = await fetch("/api/completeTask", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         credentials: "include",
-        body: JSON.stringify({
-          title: existing.title,
-          description: "", // 👈 fixed: send empty string instead of existing.description
-          status: willBeDone ? "complete" : "incomplete",
-          priority: existing.priority ?? "medium",
-          dueDate: existing.time || "",
-          completed: willBeDone,
-        }),
+        // most likely contract (mirrors completeReminder):
+        body: JSON.stringify({ title: existing.title }),
       });
 
       if (!res.ok) {
         const text = await res.text();
-        console.error("editTask (toggle) failed:", res.status, text);
+        console.error("completeTask failed:", res.status, text);
+
+        // rollback on failure
+        setTasks((ts) =>
+          ts.map((t) => (t.id === id ? { ...t, done: false } : t))
+        );
+      } else {
+        console.log("completeTask succeeded for:", existing.title);
       }
     } catch (err) {
-      console.error("Failed to toggle task completion:", err);
+      console.error("Failed to complete task:", err);
+      // rollback on error
+      setTasks((ts) =>
+        ts.map((t) => (t.id === id ? { ...t, done: false } : t))
+      );
     }
   };
 
@@ -226,7 +259,10 @@ export default function TasksPage() {
   };
 
   return (
-    <PageShell title="Tasks" subtitle={`${doneCount} of ${tasks.length} tasks completed`}>
+    <PageShell
+      title="Tasks"
+      subtitle={`${doneCount} of ${tasks.length} tasks completed`}
+    >
       <div className="vstack" style={{ gap: 24 }}>
         <GlassCard style={{ padding: 20 }}>
           <strong>All Tasks</strong>
@@ -236,11 +272,7 @@ export default function TasksPage() {
           >
             <div style={{ color: "var(--muted)" }}>Manage your daily tasks</div>
             {doneCount > 0 && (
-              <button
-                type="button"
-                className="btn"
-                onClick={clearCompleted}
-              >
+              <button type="button" className="btn" onClick={clearCompleted}>
                 Clear Completed
               </button>
             )}
@@ -280,7 +312,9 @@ export default function TasksPage() {
                   </div>
                 </div>
                 <div className="hstack" style={{ gap: 8 }}>
-                  <span className={badgeClass(t.priority)}>{t.priority}</span>
+                  <span className={badgeClass(t.priority)}>
+                    {t.priority}
+                  </span>
                   <button className="btn" onClick={() => remove(t.id)}>
                     Delete
                   </button>
@@ -302,9 +336,7 @@ export default function TasksPage() {
             style={{ padding: 16, textAlign: "center" }}
           >
             <div style={{ color: "var(--muted)" }}>Total Tasks</div>
-            <div style={{ fontSize: 28, fontWeight: 700 }}>
-              {tasks.length}
-            </div>
+            <div style={{ fontSize: 28, fontWeight: 700 }}>{tasks.length}</div>
           </GlassCard>
           <GlassCard
             className="vstack"

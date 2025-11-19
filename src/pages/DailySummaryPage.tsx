@@ -54,11 +54,14 @@ function normalizeDateKey(value: any, fallback: string): string {
   if (typeof value === "string") {
     const s = value.trim();
 
+    // already yyyy-mm-dd
     if (/^\d{4}-\d{2}-\d{2}$/.test(s)) return s;
 
+    // ISO / other parseable formats
     const parsed = new Date(s);
     if (!Number.isNaN(parsed.getTime())) return fmtDateKey(parsed);
 
+    // fallback numeric chunks
     const parts = s.split(/[^0-9]/).filter(Boolean);
     if (parts.length >= 3) {
       const [y, m, d] = parts;
@@ -76,10 +79,11 @@ function normalizeDateKey(value: any, fallback: string): string {
 
 function extractTime(value: any): string {
   if (!value || typeof value !== "string") return "";
-  const match = value.match(/(\d{1,2}:\d{2}(?::\d{2})?)/);
+  // ignore the dummy 1970 date the backend sends
+  if (value.startsWith("1970-01-01")) return "";
+  const match = value.match(/(\d{1,2}:\d{2})(?::\d{2})?/);
   if (!match) return "";
-  const hhmm = match[1];
-  return hhmm.slice(0, 5);
+  return match[1]; // HH:MM
 }
 
 function fmt(val: string | number | null | undefined, fallback = "--") {
@@ -107,8 +111,6 @@ const conditionToEmoji = (condition: string | undefined) => {
   return "🌡️";
 };
 
-const NASA_ENDPOINT = "/api/viewNasaPhoto";
-
 export default function DailySummaryPage() {
   const today = new Date();
   const todayKey = fmtDateKey(today);
@@ -126,7 +128,7 @@ export default function DailySummaryPage() {
   const [tasks, setTasks] = useState<Task[]>([]);
   const [events, setEvents] = useState<EventItem[]>([]);
   const [reminders, setReminders] = useState<Reminder[]>([]);
-  const [nasaPhoto, setNasaPhoto] = useState("");
+  const [nasaPhoto, setNasaPhoto] = useState<string>("");
   const [isSmallScreen, setIsSmallScreen] = useState(false);
 
   useEffect(() => {
@@ -180,36 +182,29 @@ export default function DailySummaryPage() {
         console.error("Error loading weather for Daily Summary:", err);
       }
 
-      // ---- NASA Photo of the Day ----
+      // ---- NASA Photo of the Day (same logic as NASA page) ----
       try {
-        const res = await fetch(NASA_ENDPOINT, {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          credentials: "include",
-          body: JSON.stringify({}),
-        });
+        const apiKey =
+          (import.meta as any).env?.VITE_NASA_API_KEY || "DEMO_KEY";
+        const url = `https://api.nasa.gov/planetary/apod?api_key=${encodeURIComponent(
+          apiKey
+        )}`;
 
+        const res = await fetch(url);
         if (!res.ok) {
           const text = await res.text();
-          console.error("viewNasaPhoto failed:", res.status, text);
+          console.warn(
+            "NASA APOD not OK:",
+            res.status,
+            text.slice(0, 120)
+          );
         } else {
-          const data = await res.json();
-          const anyData: any = data || {};
-          const photoObj =
-            anyData.photo ||
-            anyData.image ||
-            anyData.result ||
-            anyData;
-
-          const url =
-            photoObj.url ||
-            photoObj.imageUrl ||
-            photoObj.image ||
-            photoObj.hdurl ||
-            "";
-
-          if (typeof url === "string" && url.trim()) {
-            setNasaPhoto(url.trim());
+          const data: any = await res.json();
+          const photoUrl = (data.hdurl || data.url || "").trim();
+          if (photoUrl) {
+            setNasaPhoto(photoUrl);
+          } else {
+            console.warn("NASA APOD returned no image url:", data);
           }
         }
       } catch (err) {
@@ -222,7 +217,7 @@ export default function DailySummaryPage() {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           credentials: "include",
-          body: JSON.stringify({ title: "" }),
+          body: JSON.stringify({ title: "" }), // blank => all
         });
 
         if (!res.ok) {
@@ -236,12 +231,20 @@ export default function DailySummaryPage() {
             raw = (data as any).tasks;
 
           const mapped: Task[] = raw.map((t: any, index: number) => {
-            const completed =
-              t.completed === true ||
-              (typeof t.status === "string" &&
-                ["complete", "completed", "done"].includes(
-                  t.status.toLowerCase()
-                ));
+            // NEW: support { completed: { isCompleted: true } }
+            const completedObj = t.completed;
+            const completedFromObj =
+              completedObj && typeof completedObj === "object"
+                ? completedObj.isCompleted === true
+                : t.completed === true;
+
+            const completedFromStatus =
+              typeof t.status === "string" &&
+              ["complete", "completed", "done"].includes(
+                t.status.toLowerCase()
+              );
+
+            const completed = completedFromObj || completedFromStatus;
 
             let priority: Task["priority"] = "low";
             if (t.priority === "high") priority = "high";
@@ -252,14 +255,16 @@ export default function DailySummaryPage() {
             if (typeof t.time === "string" && t.time.trim()) {
               time = t.time.trim();
             } else if (typeof rawDue === "string" && rawDue.trim()) {
-              if (!rawDue.startsWith("1970-01-01")) {
-                const extracted = extractTime(rawDue);
-                if (extracted) time = extracted;
-              }
+              const extracted = extractTime(rawDue);
+              if (extracted) time = extracted;
             }
 
             return {
-              id: t.taskId || t.id || `${t.title ?? "task"}-${index}`,
+              id:
+                t.taskId ||
+                t.id ||
+                t._id ||
+                `${t.title ?? "task"}-${index}`,
               title: t.title ?? "",
               time,
               priority,
@@ -339,8 +344,20 @@ export default function DailySummaryPage() {
 
           const mapped: Reminder[] = raw
             .filter((r: any) => {
+              // NEW: respect completed.isCompleted on reminders too
+              const completedObj = r.completed;
+              const isCompletedObj =
+                completedObj && typeof completedObj === "object"
+                  ? completedObj.isCompleted === true
+                  : false;
+
               const status = (r.status || "").toLowerCase();
-              return !["complete", "completed", "done"].includes(status);
+              const statusCompleted = ["complete", "completed", "done"].includes(
+                status
+              );
+
+              // only show *active* reminders
+              return !(isCompletedObj || statusCompleted);
             })
             .map((r: any, index: number) => ({
               id:
@@ -360,6 +377,8 @@ export default function DailySummaryPage() {
     loadData();
   }, [todayKey]);
 
+  // toggle here is *visual only* (no backend call);
+  // persistence comes from Tasks page via completeTask.
   const toggleTask = (id: string) => {
     setTasks((prev) =>
       prev.map((t) =>

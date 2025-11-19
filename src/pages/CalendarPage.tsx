@@ -239,11 +239,17 @@ export default function CalendarPage() {
   };
 
   // -----------------------------
-  // Delete event
+  // Delete event (with Chrome alert/confirm)
   // -----------------------------
   const remove = async (id: string) => {
     const target = events.find((e) => e.id === id);
     if (!target) return;
+
+    // Native browser confirm dialog
+    const confirmed = window.confirm(
+      `Delete event "${target.title}"? This cannot be undone.`
+    );
+    if (!confirmed) return;
 
     // Optimistic local delete
     setEvents((evs) => evs.filter((e) => e.id !== id));
@@ -259,9 +265,19 @@ export default function CalendarPage() {
       if (!res.ok) {
         const text = await res.text();
         console.error("deleteCalendarEvent failed:", res.status, text);
+        // rollback if backend delete fails
+        setEvents((evs) => [target, ...evs]);
+        window.alert("Failed to delete event. Please try again.");
+      } else {
+        console.log("Calendar event deleted:", target.title);
+        // optional success alert
+        window.alert("Event deleted.");
       }
     } catch (err) {
       console.error("Failed to delete calendar event:", err);
+      // rollback on error
+      setEvents((evs) => [target, ...evs]);
+      window.alert("Failed to delete event. Please try again.");
     }
   };
 

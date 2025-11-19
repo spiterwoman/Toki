@@ -10,11 +10,11 @@ import {
 } from "../components/ui/dialog";
 
 type Reminder = {
-  id: string;     
+  id: string;      // backend _id or fallback
   title: string;
-  date?: string;    // yyyy-mm-dd 
+  date?: string;   // yyyy-mm-dd (not used yet)
   time?: string;
-  done?: boolean;
+  done?: boolean;  // true if completed.isCompleted === true
 };
 
 export default function RemindersPage() {
@@ -25,15 +25,15 @@ export default function RemindersPage() {
   const active = reminders.filter((r) => !r.done);
   const doneCount = reminders.length - active.length;
 
-  //load reminders from backend
+  // ---- Load reminders from backend ----
   React.useEffect(() => {
     const loadReminders = async () => {
       try {
         const res = await fetch("/api/viewReminder", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          credentials: "include", // send cookies
-          body: JSON.stringify({}),
+          credentials: "include",
+          body: JSON.stringify({}), // blank body => all reminders
         });
 
         if (!res.ok) {
@@ -46,22 +46,25 @@ export default function RemindersPage() {
         console.log("viewReminder data:", data);
 
         let raw: any[] = [];
-        if (Array.isArray(data)) raw = data;
-        else if (Array.isArray((data as any).reminders)) raw = (data as any).reminders;
-        else {
+        if (Array.isArray(data)) {
+          raw = data;
+        } else if (Array.isArray((data as any).reminders)) {
+          raw = (data as any).reminders;
+        } else {
           console.warn("Unexpected viewReminder payload", data);
           return;
         }
 
-        const mapped: Reminder[] = raw.map((r: any, index: number) => ({
-          id: `${r.title ?? "reminder"}-${index}`,
-          title: r.title ?? r.name ?? r.text ?? "",
-          done:
-            r.status === "complete" ||
-            r.status === "completed" ||
-            r.completed === true ||
-            r.done === true,
-        }));
+        const mapped: Reminder[] = raw.map((r: any, index: number) => {
+          const isCompleted =
+            !!r.completed && r.completed.isCompleted === true;
+
+          return {
+            id: r._id || r.id || `${r.title ?? "reminder"}-${index}`,
+            title: r.title ?? r.name ?? r.text ?? "",
+            done: isCompleted,
+          };
+        });
 
         setReminders(mapped);
       } catch (err) {
@@ -72,18 +75,20 @@ export default function RemindersPage() {
     loadReminders();
   }, []);
 
-  //create a new reminder
+  // ---- Create a new reminder ----
   const add = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!title.trim()) return;
 
     const trimmed = title.trim();
-    const id =
+
+    const tempId =
       globalThis.crypto && "randomUUID" in globalThis.crypto
         ? (globalThis.crypto as Crypto).randomUUID()
         : Math.random().toString(36).slice(2);
 
-    setReminders((rs) => [{ id, title: trimmed, done: false }, ...rs]);
+    // optimistic add
+    setReminders((rs) => [{ id: tempId, title: trimmed, done: false }, ...rs]);
 
     try {
       const res = await fetch("/api/createReminder", {
@@ -108,40 +113,70 @@ export default function RemindersPage() {
     setOpen(false);
   };
 
+  // ---- Mark reminder complete / un-complete ----
   const toggle = async (id: string) => {
     const current = reminders.find((r) => r.id === id);
     if (!current) return;
 
-    const willBeDone = !current.done;
+    const prevDone = current.done ?? false;
+    const willBeDone = !prevDone; // toggle
 
+    // optimistic local toggle
     setReminders((rs) =>
-      rs.map((r) => (r.id === id ? { ...r, done: willBeDone } : r))
+      rs.map((r) =>
+        r.id === id ? { ...r, done: willBeDone } : r
+      )
     );
 
-    if (willBeDone) {
-      try {
-        const res = await fetch("/api/completeReminder", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          credentials: "include",
-          body: JSON.stringify({ title: current.title }),
-        });
+    // If un-completing, we only change it locally (no API support yet)
+    if (!willBeDone) {
+      console.log(
+        "Un-completing reminder locally only (no API support yet):",
+        current.title
+      );
+      return;
+    }
 
-        if (!res.ok) {
-          const text = await res.text();
-          console.error("completeReminder failed:", res.status, text);
-        }
-      } catch (err) {
-        console.error("Failed to complete reminder:", err);
+    console.log("Marking reminder complete (optimistic):", current.title);
+
+    try {
+      const res = await fetch("/api/completeReminder", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        credentials: "include",
+        body: JSON.stringify({ title: current.title }),
+      });
+
+      if (!res.ok) {
+        const text = await res.text();
+        console.error("completeReminder failed:", res.status, text);
+
+        // rollback on failure
+        setReminders((rs) =>
+          rs.map((r) =>
+            r.id === id ? { ...r, done: prevDone } : r
+          )
+        );
+      } else {
+        console.log("completeReminder succeeded for:", current.title);
       }
+    } catch (err) {
+      console.error("Failed to complete reminder:", err);
+      // rollback on error
+      setReminders((rs) =>
+        rs.map((r) =>
+          r.id === id ? { ...r, done: prevDone } : r
+        )
+      );
     }
   };
 
-  //clear all completed reminders (and delete in backend)
+  // ---- Clear all completed reminders (delete in backend) ----
   const clearCompleted = async () => {
     const completed = reminders.filter((r) => r.done);
     if (completed.length === 0) return;
 
+    // optimistic remove
     setReminders((rs) => rs.filter((r) => !r.done));
 
     try {
@@ -173,6 +208,7 @@ export default function RemindersPage() {
   return (
     <PageShell title="Reminders" subtitle={`${active.length} active reminders`}>
       <div className="vstack" style={{ gap: 24 }}>
+        {/* ACTIVE */}
         <GlassCard style={{ padding: 20 }}>
           <div className="hstack" style={{ gap: 8, marginBottom: 8 }}>
             <span style={{ color: "#a0e0a0" }}>🔔</span>
@@ -198,6 +234,7 @@ export default function RemindersPage() {
                       borderRadius: 18,
                       border: "2px solid #facc15",
                       background: "transparent",
+                      cursor: "pointer",
                     }}
                   />
                   <div style={{ fontWeight: 600 }}>{r.title}</div>
@@ -207,6 +244,7 @@ export default function RemindersPage() {
           </div>
         </GlassCard>
 
+        {/* COMPLETED */}
         <GlassCard style={{ padding: 20 }}>
           <div className="hstack" style={{ gap: 8, marginBottom: 8 }}>
             <span style={{ color: "#a0e0a0" }}>🔔</span>
@@ -236,12 +274,16 @@ export default function RemindersPage() {
                   style={{ background: "rgba(255,255,255,.04)" }}
                 >
                   <div className="hstack" style={{ gap: 12 }}>
-                    <span
+                    <button
+                      onClick={() => toggle(r.id)}
+                      aria-label="Mark reminder as active again"
                       style={{
                         width: 12,
                         height: 12,
                         borderRadius: 12,
                         background: "#34d399",
+                        border: "none",
+                        cursor: "pointer",
                       }}
                     />
                     <div
@@ -259,6 +301,7 @@ export default function RemindersPage() {
           </div>
         </GlassCard>
 
+        {/* STATS */}
         <div
           style={{
             display: "grid",
@@ -292,7 +335,7 @@ export default function RemindersPage() {
           </GlassCard>
         </div>
 
-        {/* Floating Action Button + Dialog */}
+        {/* FAB + Dialog */}
         <Dialog open={open} onOpenChange={setOpen}>
           <DialogTrigger>
             <button
