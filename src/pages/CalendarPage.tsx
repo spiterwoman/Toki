@@ -4,6 +4,11 @@ import GlassCard from "../components/GlassCard";
 import type { CalendarEvent } from "../types";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from "../components/ui/dialog";
 
+const getAuth = () => ({
+  userId: localStorage.getItem("toki-user-id") || sessionStorage.getItem("toki-user-id") || "",
+  accessToken: localStorage.getItem("toki-auth-token") || sessionStorage.getItem("toki-auth-token") || "",
+});
+
 function fmt(d: Date) {
   const year = d.getFullYear();
   const month = `${d.getMonth() + 1}`.padStart(2, "0");
@@ -29,10 +34,11 @@ function buildMonth(year: number, month: number) {
 type UIEvent = CalendarEvent & { theme?: "purple" | "pink" | "blue" };
 
 export default function CalendarPage() {
-  const now = new Date();
-  const [year, setYear] = useState(now.getFullYear());
-  const [month, setMonth] = useState(now.getMonth());
-  const [selected, setSelected] = useState(fmt(now));
+  const today = new Date();
+  const todayKey = fmt(new Date(today.getFullYear(), today.getMonth(), today.getDate()));
+  const [year, setYear] = useState(today.getFullYear());
+  const [month, setMonth] = useState(today.getMonth());
+  const [selected, setSelected] = useState(todayKey);
   const [events, setEvents] = useState<UIEvent[]>([]);
   const [title, setTitle] = useState("");
   const [time, setTime] = useState("");
@@ -51,13 +57,38 @@ export default function CalendarPage() {
     setYear(d.getFullYear()); setMonth(d.getMonth());
   };
 
-  const add = (e: React.FormEvent) => {
+  const add = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!title.trim()) return;
     const id = (globalThis.crypto && "randomUUID" in globalThis.crypto)
       ? (globalThis.crypto as Crypto).randomUUID()
       : Math.random().toString(36).slice(2);
     setEvents((evs) => [{ id, title: title.trim(), date: selected, time: time || undefined, theme }, ...evs]);
+    try {
+      const { userId, accessToken } = getAuth();
+      if (!userId || !accessToken) {
+        console.warn("Missing auth; skipping createCalendarEvent");
+      } else {
+        const res = await fetch("/api/createCalendarEvent", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            userId,
+            accessToken,
+            title: title.trim(),
+            description: "",
+            startDate: selected,
+            endDate: selected,
+          }),
+        });
+        if (!res.ok) {
+          const text = await res.text();
+          console.error("createCalendarEvent failed:", res.status, text);
+        }
+      }
+    } catch (err) {
+      console.error("Failed to create calendar event:", err);
+    }
     setTitle(""); setTime(""); setOpen(false);
   };
   const remove = (id: string) => setEvents((evs) => evs.filter((e) => e.id !== id));

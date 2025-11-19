@@ -4,21 +4,23 @@ import GlassCard from "../components/GlassCard";
 import PageShell from "../components/PageShell";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "../components/ui/dialog";
 
-function generateTempPassword() {
-  return `TMP-${Math.random().toString(36).slice(-6).toUpperCase()}`;
-}
+const storeAuth = (data: any) => {
+  if (data?.token) localStorage.setItem("toki-auth-token", data.token);
+  if (data?.userId) localStorage.setItem("toki-user-id", data.userId);
+};
 
 export default function LoginPage() {
   const navigate = useNavigate();
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [status, setStatus] = useState<string | null>(null);
+  const [loading, setLoading] = useState(false);
   const [resetOpen, setResetOpen] = useState(false);
   const [resetEmail, setResetEmail] = useState("");
   const [resetStatus, setResetStatus] = useState<string | null>(null);
-  const [tempPreview, setTempPreview] = useState<string | null>(null);
+  const [resetLoading, setResetLoading] = useState(false);
 
-  const onSubmit = (e: React.FormEvent) => {
+  const onSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     const trimmedEmail = email.trim();
     const trimmedPassword = password.trim();
@@ -32,19 +34,80 @@ export default function LoginPage() {
       return;
     }
 
-    setStatus("Credentials ready to be sent to backend (not implemented)");
-    console.log("Login payload", { email: trimmedEmail, password: trimmedPassword });
+    //login path
+    try {
+      setLoading(true);
+      setStatus("Signing you in...");
+
+      const res = await fetch("/api/loginUser", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ email: trimmedEmail, password: trimmedPassword }),
+        credentials: "include",
+      });
+
+      if (!res.ok) {
+        let message = "Login failed. Please check your email or password.";
+        try {
+          const data = await res.json();
+          if (data?.message) message = data.message;
+        } catch {
+          //ignore json parse errors
+        }
+        setStatus(message);
+        return;
+      }
+
+      const data = await res.json();
+      console.log("login response", data);
+      storeAuth(data);
+      sessionStorage.setItem("toki-logged-in", "1");
+      setStatus("Login successful. Redirecting...");
+      navigate("/verify");
+    } catch (err) {
+      console.error("Login error:", err);
+      setStatus("Cannot reach server. Please try again.");
+    } finally {
+      setLoading(false);
+    }
   };
 
-  const onResetSubmit = (e: React.FormEvent) => {
+  const onResetSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     const trimmed = resetEmail.trim();
     if (!trimmed) return;
-    const temp = generateTempPassword();
-    localStorage.setItem("toki-temp-password", temp);
-    localStorage.setItem("toki-temp-email", trimmed);
-    setResetStatus(`Temporary password sent to ${trimmed}.`);
-    setTempPreview(temp);
+
+    try {
+      setResetLoading(true);
+      setResetStatus("Sending temporary password...");
+      const res = await fetch("/api/forgotPass", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ email: trimmed }),
+      });
+      if (!res.ok) {
+        let message = "Could not send temporary password. Please try again.";
+        try {
+          const data = await res.json();
+          if (data?.message) message = data.message;
+        } catch {
+          // ignore parse error
+        }
+        setResetStatus(message);
+        return;
+      }
+      setResetStatus(`Temporary password sent to ${trimmed}. Redirecting to login...`);
+      setTimeout(() => {
+        setResetOpen(false);
+        setResetEmail("");
+        navigate("/login");
+      }, 1200);
+    } catch (err) {
+      console.error("Forgot password error:", err);
+      setResetStatus("Cannot reach server. Please try again.");
+    } finally {
+      setResetLoading(false);
+    }
   };
 
   return (
@@ -82,8 +145,13 @@ export default function LoginPage() {
               required
             />
 
-            <button className="btn" type="submit" style={{ marginTop: 14, width: "100%" }} disabled={!email.trim() || !password}>
-              Log In
+            <button
+              className="btn"
+              type="submit"
+              style={{ marginTop: 14, width: "100%" }}
+              disabled={loading || !email.trim() || !password}
+            >
+              {loading ? "Logging in..." : "Log In"}
             </button>
             {status && (
               <div style={{ color: "var(--muted)", marginTop: 8 }} aria-live="polite">
@@ -99,7 +167,7 @@ export default function LoginPage() {
             onClick={() => {
               setResetOpen(true);
               setResetStatus(null);
-              setTempPreview(null);
+              ;
             }}
             style={{
               marginTop: 8,
@@ -123,7 +191,7 @@ export default function LoginPage() {
           if (!open) {
             setResetEmail("");
             setResetStatus(null);
-            setTempPreview(null);
+            ;
           }
         }}
       >
@@ -144,31 +212,18 @@ export default function LoginPage() {
               value={resetEmail}
               onChange={(e) => {
                 setResetStatus(null);
-                setTempPreview(null);
+                ;
                 setResetEmail(e.target.value);
               }}
               required
             />
             <button className="btn" type="submit" style={{ alignSelf: "flex-start" }}>
-              Send temporary password
+              {resetLoading ? "Sending..." : "Send temporary password"}
             </button>
           </form>
           {resetStatus && (
             <div style={{ marginTop: 12, color: "var(--muted)" }}>
-              {resetStatus} (Front-end demo shown below.)
-              {tempPreview && (
-                <div
-                  style={{
-                    marginTop: 6,
-                    fontFamily: "monospace",
-                    background: "rgba(255,255,255,.06)",
-                    padding: 8,
-                    borderRadius: 8,
-                  }}
-                >
-                  Demo password: {tempPreview}
-                </div>
-              )}
+              {resetStatus}
             </div>
           )}
         </DialogContent>
