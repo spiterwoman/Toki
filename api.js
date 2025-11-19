@@ -3,6 +3,8 @@ require('mongodb');
 var token = require('./createJWT.js');
 const { ObjectId } = require('mongodb');
 const puppeteer = require('puppeteer');
+const authMiddleware = require("./authMiddleware");
+
 require('dotenv').config(); // loads .env by default
 
 //sendgrid stuff
@@ -23,16 +25,15 @@ exports.setApp = function (app, client)
 
   app.post('/api/addUser', async (req, res) => {
 
-    const { firstName, lastName, email, password } = req.body;
-    let ret = {};
+    const { firstName, email, password } = req.body;
 
     try 
     {
       // Check if user already exists
       const db = client.db('tokidatabase');
-      const existing = await db.collection('users').findOne({ email: email });
+      const existing = await db.collection('users').findOne({ email});
       if (existing) {
-          return res.status(200).json({ error: 'Email already registered' });
+          return res.status(400).json({ error: 'Email already registered' });
       }
 
       const verificationToken = Math.floor(Math.random() * 900000)//.toString();
@@ -40,7 +41,7 @@ exports.setApp = function (app, client)
       // Insert user with plain password
       const result = await db.collection('users').insertOne({
           firstName,
-          lastName,
+          //lastName,
           email,
           password,
           verificationToken
@@ -50,17 +51,24 @@ exports.setApp = function (app, client)
 
       // Optionally create JWT immediately
       const { accessToken } = token.createToken(firstName, lastName, id);
-
-      console.log("send to login page after this");
-
-      ret = { id, firstName, lastName, accessToken, error: 'success, send to login page' };
-    } 
-    catch (e) 
-    {
-      ret = { id: -1, firstName: '', lastName: '', accessToken: '', error: e.toString() };
+      
+      return res.status(200).json({
+	      id,
+	      firstName,
+	      //lastName,
+	      accessToken,
+	      verificationToken,
+	      error: 'success, send to login page'
+      });
+    }  catch (e) {
+	    return res.status(500).json({
+		    id: -1,
+		    firstName: "",
+		    //lastName: "",
+		    accessToken: "",
+		    error: e.toString()
+	    });
     }
-
-    res.status(200).json(ret);
   });
 
   app.post('/api/forgotPass', async (req, res, next) => {
@@ -75,7 +83,8 @@ exports.setApp = function (app, client)
 
     //make random password
     const oldPassword = user.password
-    const tempPassword = "temppasssRn?12"
+    const tempPassword = generateRandomPassword();
+
     try 
     {
       const result = await db.collection('users').updateOne(
@@ -108,43 +117,63 @@ exports.setApp = function (app, client)
     res.status(200).json(ret);
   });
 
-  app.post('/api/loginUser', async (req, res, next) => {
+  app.post('/api/loginUser', async (req, res) => {
     // incoming: email, password
     // outgoing: id, firstName, lastName, accessToken, error
 
     const { email, password } = req.body;
-    let error = '';
-    let ret = {};
+
 
     try {
       const db = client.db('tokidatabase');
-      const results = await db.collection('users').find({ email: email, password: password }).toArray();
-
-      if (results.length > 0) {
-        const user = results[0];
-        const id = user._id.toString();
-        const firstName = user.firstName;
-        const lastName = user.lastName;
-        const verificationToken = user.verificationToken;
-
-        const token = require('./createJWT.js');
-        const { accessToken } = token.createToken(firstName, lastName, id);
-
-        console.log("send email");
-
-        sendVerEmail(user.email, verificationToken);
-
-        console.log("should have sent email, go to verify page");
-
-        ret = { id, firstName, lastName, accessToken, verificationToken, error: 'none, send to verify page' };
-      } else {
-        ret = { id: -1, firstName, lastName, accessToken, verificationToken : 0, error: 'Login/Password incorrect' };
+      const user = await db.collection('users').findOne({ email });
+      if (!user){
+	      return res.status(404).json({
+		      error: "Email not found"
+	      });
       }
-    } catch (e) {
-      ret = { id: -1, firstName: '', lastName: '', accessToken: '', verificationToken : -1,error: e.toString() };
-    }
+      if (user.password !== password){
+	      return res.status(401).json({
+		      error: "Incorrect Password",
+	      });
+      }
+	    const id = user._id.toString();
+	    const { accessToken } = token.createToken(user.firstName, user.lastName, id);
 
-    res.status(200).json(ret);
+      res.cookie("accessToken", accessToken, {
+        httpOnly: true,
+        secure: true,
+        sameSite: "strict",
+      });
+
+	    // not verified
+	    if (!user.isVerified){
+	    sendVerEmail(user.email, user.verificationToken);
+      console.log("Sending response with status 200");
+	    return res.status(200).json({
+		    id,
+		    firstName: user.firstName,
+		    lastName: user.lastName,
+		    accessToken,
+		    verificationToken: user.verificationToken,
+		    error: "Please verify email"
+	    });
+    } 
+    console.log("3");
+	    return res.status(200).json({
+		    id,
+		    firstName: user.firstName,
+		    lastName: user.lastName,
+		    accessToken,
+		    error: ""
+	    });
+    }
+	    catch (e){
+        console.log("4");
+	    return res.status(500).json({
+		    error: e.toString(),
+	    });
+    }
   });
 
   app.post('/api/verifyUser', async (req, res, next) => {
@@ -340,27 +369,14 @@ exports.setApp = function (app, client)
   });
 
 
-  app.post('/api/createReminder', async (req, res) => {
+  app.post('/api/createReminder', authMiddleware, async (req, res) => {
 
     //this is all info passed from FE
-    const { userId, accessToken, title, desc, status, priority, year, month, day, } = req.body;
-    const dueDate = new Date(year, month-1, day);
-
-    
+    const {  title,  } = req.body;
+    const userId = req.userId;
     let ret = {};
 
-    //check all still good with accessToken
-    try 
-    {
-      if (token.isExpired(accessToken))
-      {
-        return res.status(200).json({error:'The JWT is no longer valid', accessToken: ''});
-      }
-    } 
-    catch (e) 
-    {
-      console.log(e.message);
-    }
+    console.log(userId)
 
     try 
     {
@@ -371,10 +387,6 @@ exports.setApp = function (app, client)
       const result = await db.collection('reminders').insertOne({
           userId: new ObjectId(userId), 
           title,
-          desc,
-          status, 
-          priority, 
-          dueDate,
           completed: {
             isCompleted: false,
             completedAt: null
@@ -388,7 +400,7 @@ exports.setApp = function (app, client)
       console.log("should have inserted reminder");
 
       //what to pass back to FE
-      ret = { title, desc, status, priority, dueDate , error: 'success, show like green thingy',accessToken };
+      ret = { title, error: 'success, show like green thingy' };
     } 
     catch (e) 
     {
@@ -398,239 +410,176 @@ exports.setApp = function (app, client)
     res.status(200).json(ret);
   });
 
-  app.post('/api/viewReminder', async(req,res)=>{
+  app.post('/api/viewReminder', authMiddleware, async(req,res)=>{
 	  // incoming: userId, accessToken, taskId
 	  // outgoing: all tasks / single task, error
-    const {userId, accessToken, reminderId} = req.body;
+    const {reminderId} = req.body;
+    const userId = req.userId;
     let ret = {};
-	// validate JWT
-    try{
-	    if (token.isExpired(accessToken)){
-		    return res
-		      .status(200)
-		      .json({error: 'The JWT is no longer valid', accessToken: ''});
-	    }
-    }catch(e) {
-	    console.log(e.message);
-    }
+
 	  try{
 		  const db = client.db('tokidatabase');
 		  const remindersCollection = db.collection('reminders');
-		  if (reminderId){
+		  if (reminderId) {
 			  // specific task
-		    const task = await remindersCollection.findOne({
+		    const reminder = await remindersCollection.findOne({
 			    _id: new ObjectId(reminderId),
 			    userId: new ObjectId(userId),
 		    });
-		  if (!reminders){
-			  ret = {success: false, error: 'Reminder not found', accessToken};
-		  } else {
-			  ret = {success: true, reminders, error: '', accessToken};
-		  }
-		  } else {
+		    if (!reminder){
+			 	 ret = {success: false, error: 'Reminder not found' };
+		  	} else {
+			 	 ret = {success: true, reminder, error: ''};
+		 	  }
+		 	  } else {
 			  // all reminders
 			  const reminders = await remindersCollection
 			  .find({userId: new ObjectId(userId)})
 			  .sort({createdAt: -1})
 			  .toArray();
-			ret = {success: true, reminders, error: '', accessToken};
+			ret = {success: true, reminders, error: ''};
 		  }
 	  } catch (e){
-		  ret = {success: false, error: e.toString()};
+		  console.log('Database error:', e.message, e);
+		  ret = {success: false, error: e.message};
 	  }
-	  // Refresh JWT
-	  let refreshedToken = null;
-	  try {
-		  refreshedToken = token.refresh(accessToken);
-	  } catch (e){
-		  console.log(e.message);
-	  } 
+	 
 	  res.status(200).json(ret);
   });
 
-  app.post('/api/editReminder', async(req, res, next) => {
-
+  app.post('/api/editReminder', authMiddleware, async(req, res) => {
     //this is all info passed from FE
-    const { userId, accessToken, title, desc, status, priority, year, month, day} = req.body;
+    const { title, desc, status, priority, year, month, day} = req.body;
+    const userId = req.userId;
     const dueDate = new Date(year, month-1, day);
     let ret = {};
+    try {
+      const db = client.db('tokidatabase');
+      const reminderFound = await db.collection('reminders').findOne({
+	      userId: new ObjectId(userId),
+	      title: title
+      });
 
-    try 
-    {
-      if (token.isExpired(accessToken))
-      {
-        return res.status(200).json({error:'The JWT is no longer valid', accessToken: ''});
-      }
-    } 
-    catch (e) 
-    {
-      console.log(e.message);
+    if (!reminderFound){
+	    return res.status(200).json({
+		    success: false,
+		    error: "reminder not found"
+	    });
     }
-
-    //give id of reminder
-    const db = client.db('tokidatabase');
-    const reminderFound= await db.collection('reminders').findOne({ userId: new ObjectId(userId) , title : title });
-
-    let error = '';
-
-    try 
-    {
       const result = await db.collection('reminders').updateOne(
-        {  _id: new ObjectId(reminderFound._id) },
-        { $set: { title:title, desc:desc, status:status, priority:priority, dueDate:dueDate, updatedAt: new Date()} }
+        {  _id: new ObjectId(reminderFound._id),
+	 },
+        { $set: { title, desc, status, priority, dueDate, updatedAt: new Date()} }
       );
 
-      if (result.matchedCount > 0) 
-        ret = { success: true,  title, desc, status, priority, dueDate, error: "reminder updated fine", accessToken };
-      else ret = { success: false, error: "reminder not updated correctly" };
+      if (result.matchedCount > 0){ 
+        ret = { success: true, error: "reminder updated fine"};
+    }  else{
+	    ret = { success: false, error: "reminder not updated correctly" };
     } 
-    catch (e) 
-    {
+    }  catch (e) { 
       ret = { success: false, error: e.toString() }
-    }
-
-    let refreshedToken = null;
-    try 
-    {
-      refreshedToken = token.refresh(accessToken);
-    } 
-    catch (e) 
-    {
-      console.log(e.message);
     }
 
     res.status(200).json(ret);
   });
 
-  app.post('/api/completeReminder', async(req, res, next) => {
+  app.post('/api/completeReminder', authMiddleware, async(req, res) => {
 
     //this is all info passed from FE
-    const { userId, accessToken, title} = req.body;
+    const {title} = req.body;
+    const userId = req.userId; 
     let ret = {};
 
     try 
     {
-      if (token.isExpired(accessToken))
-      {
-        return res.status(200).json({error:'The JWT is no longer valid', accessToken: ''});
+      const db = client.db('tokidatabase');
+      const reminderFound = await db.collection('reminders').findOne({
+	      userId: new ObjectId(userId),
+	      title: title
+      });
+	
+      if (!reminderFound){
+	      return res.status(200).json({
+		      success: false,
+		      error: "Reminder not found"
+	      });
       }
-    } 
-    catch (e) 
-    {
-      console.log(e.message);
-    }
 
-    //give id of reminder
-    const db = client.db('tokidatabase');
-    const reminderFound= await db.collection('reminders').findOne({ userId: new ObjectId(userId) , title : title });
-
-    let error = '';
-
-    try 
-    {
       const result = await db.collection('reminders').updateOne(
         {  _id: new ObjectId(reminderFound._id) },
         { $set: { "completed.isCompleted": true, "completed.completedAt": new Date()} }
       );
 
-      if (result.matchedCount > 0) 
-        ret = { success: true,  title, error: "reminder set to completed", accessToken };
-      else ret = { success: false, error: "reminder not completed" };
+      if (result.matchedCount > 0){ 
+        ret = { success: true, error: "reminder set to completed" };
+    }  else
+	  {
+	
+	ret = { success: false, error: "reminder not completed" };
     } 
-    catch (e) 
-    {
-      ret = { success: false, error: e.toString() }
-    }
-
-    let refreshedToken = null;
-    try 
-    {
-      refreshedToken = token.refresh(accessToken);
-    } 
-    catch (e) 
-    {
-      console.log(e.message);
+    }  catch (e) { 
+      ret = { success: false, error: e.toString() };
     }
 
     res.status(200).json(ret);
   });  
 
-  app.post('/api/deleteReminder', async(req, res, next) => {
+  app.post('/api/deleteReminder', authMiddleware, async(req, res) => {
     //this is all info passed from FE
-    const { userId, accessToken, title} = req.body;
+    const { title } = req.body;
+    const userId = req.userId;
     let ret = {};
-
-    try 
-    {
-      if (token.isExpired(accessToken))
-      {
-        return res.status(200).json({error:'The JWT is no longer valid', accessToken: ''});
-      }
-    } 
-    catch (e) 
-    {
-      console.log(e.message);
-    }
-
-    const db = client.db('tokidatabase');
-    const reminderFound= await db.collection('reminders').findOne({ userId: new ObjectId(userId) , title : title });
-    let error = '';
-    let success = false;
     
     try 
     {
+      const db = client.db('tokidatabase');
+      const reminderFound = await db.collection('reminders').findOne({
+	      userId: new ObjectId(userId),
+	      title: title
+      });
+	    if (!reminderFound){
+		    return res.status(200).json({
+			    success: false,
+			    error: "Reminder not found"
+		    });
+	    }
+
       const result = await db.collection('reminders').deleteOne({ _id: new ObjectId(reminderFound._id) });
-      if (result.deletedCount > 0) success = true;
-      else ret = { success: false, error: "reminder didnt delete right" };
-
-      ret = { success: true, error: "reminder successfully deleted"}
+      if (result.deletedCount > 0){
+	      ret = { success: true, error: "reminder successfully deleted" };
+      }
+      else
+	    { ret = { success: false, error: "reminder didnt delete right" };
+      }
     } 
     catch (e)
     {
-      ret = { success: false, error: e.toString() }
-    }
-
-    let refreshedToken = null;
-    try 
-    {
-      refreshedToken = token.refresh(accessToken);
-    } 
-    catch (e)
-    {
-      console.log(e.message);
+      ret = { success: false, error: e.toString() };
     }
 
     res.status(200).json(ret);
   });
 
 
-  app.post('/api/createTask', async(req,res) => {
+  app.post('/api/createTask', authMiddleware, async(req,res) => {
 
 	  // incoming: userId, accessToken, title, description, status, priority, dueDate, completed
 	  // success, taskId, error, accessToken
-    const {userId, accessToken, title, description, status, priority, dueDate, completed}= req.body;
+    const {title, dueDate, tag, priority}= req.body;
+    const userId = req.userId; 
     let ret = {};
-    // Make sure JWT is still valid
-    try {
-	    if (token.isExpired(accessToken)){
-		    return res.status(200).json({error:'The JWT is no longer valid', accessToken: ''});
-	    }
-    } catch (e){
-	    console.log(e.message);
-    }
+    
     try {
 	const db = client.db('tokidatabase');
 	    // insert to tasks collections
 	const newTask = {
 		userId: new ObjectId(userId),
 		title,
-		description: description || '',
-		status: status || 'not started',
-		priority: priority || 'medium',
+		priority: priority ,
+    		tag: tag,
 		dueDate: dueDate ? new Date(dueDate) : null,
-		completed: (typeof completed === 'object' && completed !== null)
-		  ? completed
-		  : {isCompleted: false, completedAt: null },
+		completed: {isCompleted: false, completedAt: null},
 		createdAt: new Date(), 
 		updatedAt: new Date()
 	};
@@ -640,43 +589,26 @@ exports.setApp = function (app, client)
 	    ret = {
 		    success: true,
 		    taskId,
-		    error: 'success, task added to database',
-		    accessToken
+		    error: 'success, task added to database'
 	    };
     } catch (e) {
 	    ret = {
 		    success: false,
 		    taskId: '',
-		    error: e.toString(),
-		    accessToken
+		    error: e.toString()
 	    };
     }
-	  // Refresh JWT
-	  let refreshedToken = null;
-	  try {
-		  refreshedToken = token.refresh(accessToken);
-	  } catch (e) {
-		  console.log(e.message);
-	  }
 	  res.status(200).json(ret);
   });
 	// view task based on taskId for specific task and userId for all tasks
 
-  app.post('/api/viewTask', async(req,res)=>{
+  app.post('/api/viewTask', authMiddleware, async(req,res)=>{
 	  // incoming: userId, accessToken, taskId
 	  // outgoing: all tasks / single task, error
-    const {userId, accessToken, taskId} = req.body;
+    const {taskId} = req.body;
+    const userId = req.userId;
     let ret = {};
-	// validate JWT
-    try{
-	    if (token.isExpired(accessToken)){
-		    return res
-		      .status(200)
-		      .json({error: 'The JWT is no longer valid', accessToken: ''});
-	    }
-    }catch(e) {
-	    console.log(e.message);
-    }
+
 	  try{
 		  const db = client.db('tokidatabase');
 		  const tasksCollection = db.collection('tasks');
@@ -687,9 +619,9 @@ exports.setApp = function (app, client)
 			    userId: new ObjectId(userId),
 		    });
 		  if (!task){
-			  ret = {success: false, error: 'Task not found', accessToken};
+			  ret = {success: false, error: 'Task not found'};
 		  } else {
-			  ret = {success: true, task, error: '', accessToken};
+			  ret = {success: true, task, error: ''};
 		  }
 		  } else {
 			  // all tasks
@@ -697,43 +629,30 @@ exports.setApp = function (app, client)
 			  .find({userId: new ObjectId(userId)})
 			  .sort({createdAt: -1})
 			  .toArray();
-			ret = {success: true, tasks, error: '', accessToken};
+			ret = {success: true, tasks, error: ''};
 		  }
 	  } catch (e){
 		  ret = {success: false, error: e.toString()};
 	  }
-	  // Refresh JWT
-	  let refreshedToken = null;
-	  try {
-		  refreshedToken = token.refresh(accessToken);
-	  } catch (e){
-		  console.log(e.message);
-	  } 
 	  res.status(200).json(ret);
   });
 
-  app.post('/api/editTask', async(req, res)=>{
+  app.post('/api/editTask', authMiddleware, async(req, res)=>{
 	  // incoming: userId, accessToken, taskId, title, description, status, priority, dueDate, completed
 	  // outgoing: success, updatedTask, error, accessToken
-    const {userId, accessToken, taskId, title, description, status, priority, dueDate, completed} = req.body;
+    const {taskId, title, description, status, priority, dueDate, completed} = req.body;
+	  const userId = req.userId;
 	  let ret = {};
 
-	 // Verify JWT
-	 try {
-		if (token.isExpired(accessToken)){
-			return res.status(200).json({error: 'The JWT is no longer valid', accessToken: ''});
-		}
-	 } catch (e) {
-		 console.log(e.message);
-	 } 
-	 try {
+	 
+	try {
 		 const db = client.db('tokidatabase');
 		 const tasksCollection = db.collection('tasks');
 
 		 // Update to the fields needed
 	const updateFields = {
 		updatedAt: new Date()
-	}
+	};
 	if (title) updateFields.title = title;
 	if (description) updateFields.description = description;
 	if (status) updateFields.status = status;
@@ -747,38 +666,25 @@ exports.setApp = function (app, client)
 	);
 	if (result.matchedCount === 0){
 		// No tasks
-		ret = { success: false, error: 'Task not found or unauthorized', accessToken};
+		ret = { success: false, error: 'Task not found or unauthorized'};
 	} else {
 		const updatedTask = await tasksCollection.findOne({_id: new ObjectId(taskId)});
-		ret = { success: true, updatedTask, error: '', accessToken};
+		ret = { success: true, updatedTask, error: ''};
 	}
 	} catch (e){
-		ret = { success: false, error: e.toString(), accessToken};
+		ret = { success: false, error: e.toString()};
 	}
-	// Refresh JWT
-	try {
-		const refreshedToken = token.refresh(accessToken);
-		ret.accessToken = refreshedToken;
-	} catch (e){
-		console.log(e.message);
-	}
+	
 	  res.status(200).json(ret);
   });
 
-  app.post('/api/deleteTask', async (req, res) => {
+  app.post('/api/deleteTask',authMiddleware,  async (req, res) => {
 	  // incoming: userId, accessToken, taskId
 	  // outgoing: success, error, accessToken
-    const { userId, accessToken, taskId} = req.body;
+    const {taskId} = req.body;
+    const userId = req.userId;
     let ret = {};
 
-	  // verify JWT
-	  try {
-		  if (token.isExpired(accessToken)){
-			  return res.status(200).json({error: 'The JWT is not longer valid', accessToken: '' });
-		  }
-	  } catch (e) {
-		  console.log(e.message);
-	  } 
 	  try {
 		  const db = client.db('tokidatabase');
 		  const tasksCollection = db.collection('tasks');
@@ -788,83 +694,54 @@ exports.setApp = function (app, client)
 			  userId: new ObjectId(userId),
 		  });
 		  if (result.deletedCount === 0){
-			  ret = { success: false, error: 'Task not found or unauthorized', accessToken};
+			  ret = { success: false, error: 'Task not found or unauthorized'};
 		  }else{
-			  ret = { success: true, error: 'Task deleted successfully', accessToken};
+			  ret = { success: true, error: 'Task deleted successfully'};
 		  }
 	} catch (e){
-	ret = { success: false, error: e.toString(), accessToken};
+	ret = { success: false, error: e.toString()};
 	}
-	  // Refresh JWT
-	  try {
-		  const refreshedToken = token.refresh(accessToken);
-		  ret.accessToken = refreshedToken;
-	  } catch (e){
-		  console.log(e.message);
-	  }
 
 	  res.status(200).json(ret);
   });
 
 
-  app.post('/api/createCalendarEvent', async(req, res) => {
+  app.post('/api/createCalendarEvent',authMiddleware, async(req, res) => {
 	   // incoming : userId, accessToken, title, description, location, startTime, endTime} 
 	   // outgoing: success, eventId, error, accessToken
-    const { userId, accessToken, title, description, location, startDate, endDate, color, allDay, reminder} = req.body; 
+    const {title, description, startDate, endDate} = req.body;
+    const userId = req.userId;
     let ret = {}
 
-	  try {
-		  if (token.isExpired(accessToken)){
-			  return res.status(200).json({error: 'The JWT is no longer valid', accessToken: ''});
-		  }
-	  } catch (e) {
-			  console.log(e.message);
-		  }
 		  try {
 			  const db = client.db('tokidatabase');
 			  const newEvent = {
 				  userId: new ObjectId(userId),
 				  title,
 				  description,
-				  location,
 				  startDate: new Date(startDate),
 				  endDate: new Date(endDate),
-				  color: color || {},
-				  reminder: reminder || {},
-				  allDay: allDay || {},
 				  createdAt: new Date(),
 				  updatedAt: new Date(), 
 			  }; 
 	const result = await db.collection('calendarevents').insertOne(newEvent);
 	const eventId = result.insertedId.toString();
 	
-	ret = { success: true, eventId, error: 'success, event created', accessToken };
+	ret = { success: true, eventId, error: 'success, event created'};
 	} catch (e){
-		ret = { success: false, error: e.toString(), accessToken };
+		ret = { success: false, error: e.toString() };
 	}
 
-	try {
-		const refreshedToken = token.refresh(accessToken);
-		ret.accessToken = refreshedToken;
-	} catch (e){
-		console.log(e.message);
-	}
 		  res.status(200).json(ret);
   });
 
-  app.post('/api/viewCalendarEvent', async(req,res)=>{
+  app.post('/api/viewCalendarEvent',authMiddleware, async(req,res)=>{
 	  // incoming: userId, accessToken
 	  // outgoing: single event or list of events
-	const { userId, accessToken, eventId} = req.body;
+       	const {eventId} = req.body;
+	  const userId = req.userId;
 	  let ret = {};
 
-	  try{
-		  if (token.isExpired(accessToken)){
-			  return res.status(200).json({error: 'The JWT is no longer valid', accessToken: ''});
-		  } 
-	  } catch (e) {
-		  console.log(e.message);
-	  }
 	  try {
 		  const db = client.db('tokidatabase');
 		  const eventsCollection = db.collection('calendarevents');
@@ -876,40 +753,27 @@ exports.setApp = function (app, client)
 			  });
 
 		ret = event
-			  ? { success: true, event, error: '', accessToken}
-			  : { success: false, error: 'Event not found', accessToken};
+			  ? { success: true, event, error: ''}
+			  : { success: false, error: 'Event not found'};
 		  }else {
 			  const events = await eventsCollection
 			  .find({userId: new ObjectId(userId)})
 			  .sort({startTime: 1})
 			  .toArray();
-		ret = { success: true, events, error: '', accessToken};
+		ret = { success: true, events, error: ''};
 		  }
 	  }catch (e){
-		  ret = { success: false, error: e.toString(), accessToken};
+		  ret = { success: false, error: e.toString()};
 	  } 
 
-	  try {
-		  const refreshedToken = token.refresh(accessToken);
-		  ret.accessToken = refreshedToken;
-	  } catch (e){
-		  console.log(e.message);
-	  } 
 	  res.status(200).json(ret);
   });
 
-  app.post('/api/editCalendarEvent', async(req, res)=>{
+  app.post('/api/editCalendarEvent', authMiddleware, async(req, res)=>{
 	  // incoming: userId, accessToken, eventId, title, description, location, startTime, endTime
-	  const { userId, accessToken, eventId, title, description, location, startDate, endDate, color, allDay, reminder} = req.body;
+	  const {eventId, title, description, location, startDate, endDate, color, allDay, reminder} = req.body;
+	  const userId = req.userId;
 	  let ret = {};
-
-	  try {
-		  if (token.isExpired(accessToken)){
-			  return res.status(200).json({error: 'The JWT is no longer valid', accessToken: ''});
-		  }
-	  } catch (e){
-		  console.log(e.message);
-	  } 
 
 	  try {
 		  const db = client.db('tokidatabase');
@@ -931,37 +795,24 @@ exports.setApp = function (app, client)
 		  );
 
 		  if (result.matchedCount === 0) {
-			  ret = { success: false, error: 'Event not found or unauthorized', accessToken };
+			  ret = { success: false, error: 'Event not found or unauthorized' };
 		  } else {
 			  const updatedEvent = await eventsCollection.findOne({_id:new ObjectId(eventId)});
-		  ret = { success: true, updatedEvent, error: '', accessToken};
+		  ret = { success: true, updatedEvent, error: ''};
 		  } 
 	  } catch (e) {
-		  ret = { success: false, error: e.toString(), accessToken};
-	  } 
-	  try {
-		  const refreshedToken = token.refresh(accessToken);
-		  ret.accessToken = refreshedToken;
-	  } catch (e) {
-		  console.log(e.message);
+		  ret = { success: false, error: e.toString()};
 	  } 
 	  res.status(200).json(ret);
   });
 	
-  app.post('/api/deleteCalendarEvent', async(req, res) =>{
+  app.post('/api/deleteCalendarEvent',authMiddleware, async(req, res) =>{
 	  // incoming: userId, accessToken, eventId
 	  // outgoing: success, error
 
-	  const { userId, accessToken, eventId } = req.body;
+	  const { eventId } = req.body;
+	  const userId = req.userId;
 	  let ret = {};
-
-	  try{
-		  if (token.isExpired(accessToken)){
-			  return res.status(200).json({error: 'The JWT is no longer valid', accessToken: '' });
-		  }
-		  } catch (e) {
-			  console.log(e.message);
-		  } 
 
 		  try {
 			  const db = client.db('tokidatabase');
@@ -973,120 +824,62 @@ exports.setApp = function (app, client)
 
 			  ret = 
 				  result.deletedCount === 0
-			  ? {success: false, error: 'Event not found or unauthorized', accessToken }
-			  : {success: true, error: 'Event deleted successfully', accessToken};
+			  ? {success: false, error: 'Event not found or unauthorized' }
+			  : {success: true, error: 'Event deleted successfully'};
 		  } catch (e) {
-			  ret = { success: false, error: e.toString(), accessToken};
-		  } 
-		  try{
-			  const refreshedToken = token.refresh(accessToken);
-			  ret.accessToken = refreshedToken;
-		  } catch (e) {
-			  console.log(e.message);
+			  ret = { success: false, error: e.toString()};
 		  } 
 
 		  res.status(200).json(ret);
   });
-  
-  
-  // Try to find Chrome/Chromium executable
-  /*
-  async function updateGarages() {
-    const maxRetries = 3;
-    let retryCount = 0;
-    let browser;
 
-    while (retryCount < maxRetries) {
-      try {
-        await client.connect();
-        const db = client.db('tokidatabase');
-        const collection = db.collection("parkinglocations");
-
-        // Launch Puppeteer (bundled Chromium)
-        browser = await puppeteer.launch({
-          headless: true,
-          args: [
-            '--no-sandbox',
-            '--disable-setuid-sandbox',
-            '--disable-dev-shm-usage',
-            '--disable-gpu'
-          ]
-        });
-
-        const page = await browser.newPage();
-
-        await page.setUserAgent('Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36');
-
-        await page.goto('https://parking.ucf.edu/resources/garage-availability/', {
-          waitUntil: 'domcontentloaded',
-          timeout: 60000
-        });
-
-        await page.waitForSelector('#OccupancyOutput tr', { timeout: 10000 });
-
-        const garages = await page.evaluate(() => {
-          const rows = Array.from(document.querySelectorAll('#OccupancyOutput tr'));
-          return rows
-            .map(row => {
-              const cols = row.querySelectorAll('td');
-              if (cols.length >= 3) {
-                const available = parseInt(cols[1].innerText.trim(), 10);
-                const total = parseInt(cols[2].innerText.trim(), 10);
-                return {
-                  garageName: cols[0].innerText.trim(),
-                  availableSpots: available,
-                  totalSpots: total,
-                  percentFull: total > 0 ? Math.round((1 - available/total) * 100) : null,
-                  lastUpdated: new Date(),
-                  updatedAt: new Date(),
-                  createdAt: new Date()
-                };
-              }
-            })
-            .filter(Boolean);
-        });
-
-        await browser.close();
-        browser = null;
-
-        if (garages.length > 0) {
-          for (const garage of garages) {
-            await collection.updateOne(
-              { garageName: garage.garageName },
-              { $set: garage },
-              { upsert: true }
-            );
-          }
-          console.log(`[${new Date().toLocaleTimeString()}] Garage data updated:`, garages.length, "garages");
-        } else {
-          console.warn(`[${new Date().toLocaleTimeString()}] Warning: No garage data found`);
-        }
-
-        break;
-
-      } catch (err) {
-        retryCount++;
-        console.error(`Error scraping/updating garages (attempt ${retryCount}/${maxRetries}):`, err.message);
-
-        if (browser) {
-          try { await browser.close(); } catch {}
-          browser = null;
-        }
-
-        if (retryCount < maxRetries) {
-          await new Promise(resolve => setTimeout(resolve, Math.pow(2, retryCount) * 1000));
-        } else {
-          console.error("Max retries reached. Will try again on next interval.");
-        }
-      }
+app.post('/api/viewGarages', async(req,res)=>{
+    const {accessToken} = req.body;
+    let ret = {};
+	// validate JWT
+    try{
+	    if (token.isExpired(accessToken)){
+		    return res
+		      .status(200)
+		      .json({error: 'The JWT is no longer valid', accessToken: ''});
+	    }
+    }catch(e) {
+	    console.log(e.message);
     }
-  }
-  updateGarages();
-  setInterval(updateGarages, 2 * 60 * 1000);
-  */
 
-// V2 to try
-  // Try to find Chrome/Chromium executable
+	  try{
+		  const db = client.db('tokidatabase');
+		  const garageCollection = db.collection('parkinglocations');
+
+      const garages = await garageCollection
+		  .find({})
+		  .sort({garageName:1})
+		  .toArray();
+
+		  ret = { success: true, garages, error: '', accessToken};
+
+      if (!garages) {
+        return res.status(200).json({
+          success: false, 
+          error: 'No garages found',
+          accessToken
+        });
+      } 
+    }
+	  catch (e)
+    {
+		  ret = {success: false, error: e.toString()};
+	  }
+	  // Refresh JWT
+	  let refreshedToken = null;
+	  try {
+		  refreshedToken = token.refresh(accessToken);
+	  } catch (e){
+		  console.log(e.message);
+	  } 
+	  res.status(200).json(ret);
+  });
+
 async function updateGarages() {
   const maxRetries = 3;
   let retryCount = 0;
@@ -1394,8 +1187,6 @@ app.post('/api/recentAPODs', async (req, res) => {
 
   res.status(200).json(ret);
 });
-
-
 }
   
 
@@ -1434,4 +1225,16 @@ function sendTempPassEmail(email, tempPassword)
 }
 
 
+function generateRandomPassword(length = 12) 
+{
+  const chars = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789!@#$%^&*()_+";
+  let password = "";
+  for (let i = 0; i < length; i++) {
+    const randomIndex = Math.floor(Math.random() * chars.length);
+    password += chars[randomIndex];
+  }
+  return password;
+}
+
         
+
