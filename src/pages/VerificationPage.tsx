@@ -6,11 +6,14 @@ import { Button } from "../components/ui/button";
 import { InputOTP, InputOTPGroup, InputOTPSlot } from "../components/ui/input-otp";
 
 interface VerificationPageProps {
-  onVerify: () => boolean | void;
+  email: string;
+  onSuccess: () => void;
 }
 
-export default function VerificationPage({ onVerify }: VerificationPageProps) {
+export default function VerificationPage({ email, onSuccess }: VerificationPageProps) {
   const [otp, setOtp] = useState('');
+  const [errorMsg, setErrorMsg] = useState('');
+  const [loading, setLoading] = useState(false);
   const otpRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
@@ -20,15 +23,44 @@ export default function VerificationPage({ onVerify }: VerificationPageProps) {
     }
   }, []);
 
-  const handleVerify = () => {
-    if (otp.length === 6) {
-      const success = onVerify();
-      if (success === false) {
-        otpRef.current?.focus();
-      }
+  const handleVerify = async () => {
+    if (otp.length !== 6) {
+      setErrorMsg("Please enter the 6-digit code.");
+      otpRef.current?.focus();
       return;
     }
-    otpRef.current?.focus();
+    
+    setLoading(true);
+    setErrorMsg('');
+
+    try {
+      const res = await fetch('/api/verifyUser', {
+        method: 'POST',
+        headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify({
+          email,
+          verificationToken: otp,
+          accessToken: localStorage.getItem('token'),
+        }),
+      });
+
+      const data = await res.json();
+
+      if (data.error === "success, send to Dashboard page") {
+        onSuccess();
+      } else if (data.error === "The JWT is no longer valid") {
+        setErrorMsg("Your session expired. Please log in again.");
+      } else {
+        setErrorMsg("Invalid verification code. Try again.");
+        otpRef.current?.focus();
+      }
+
+      } catch (err) {
+      console.error(err);
+      setErrorMsg("An unexpected error occurred. Please try again.");
+      } finally {
+        setLoading(false);
+      }
   };
 
   return (
@@ -87,30 +119,18 @@ export default function VerificationPage({ onVerify }: VerificationPageProps) {
             </InputOTPGroup>
           </InputOTP>
 
+          {errorMsg && <div style={{ textAlign: "center", color: "rgba(255,255,255,0.6)", fontSize: "0.85rem", marginTop: 8 }}>{errorMsg}</div>}
+
           {/* Verify Button */}
           <Button
             onClick={handleVerify}
             style={{ marginBottom: 12 }}
+            disabled={loading}
           >
-            Verify Email
+            {loading ? "Verifying..." : "Verify Email"}
           </Button>
-
-          {/* Resend */}
-          <div style={{ textAlign: "center", fontSize: "0.9rem", color: "rgba(255,255,255,0.6)" }}>
-            Didn't receive the code?
-            <button style={{ 
-                fontSize: "0.9rem",
-                color: "#a7c6ff", 
-                background: "none", 
-                border: "none", 
-                cursor: "pointer",
-                textDecoration: "underline"}}
-                >
-              Resend
-            </button>
-          </div>
         </GlassCard>
       </div>
     </PageShell>
   );
-  }
+}
