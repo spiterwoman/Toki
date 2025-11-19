@@ -1,12 +1,18 @@
 import React from "react";
 import PageShell from "../components/PageShell";
 import GlassCard from "../components/GlassCard";
-import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from "../components/ui/dialog";
+import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+  DialogTrigger,
+} from "../components/ui/dialog";
 
 type Reminder = {
-  id: string;
+  id: string;     
   title: string;
-  date?: string; // yyyy-mm-dd
+  date?: string;    // yyyy-mm-dd 
   time?: string;
   done?: boolean;
 };
@@ -19,36 +25,150 @@ export default function RemindersPage() {
   const active = reminders.filter((r) => !r.done);
   const doneCount = reminders.length - active.length;
 
+  //load reminders from backend
+  React.useEffect(() => {
+    const loadReminders = async () => {
+      try {
+        const res = await fetch("/api/viewReminder", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          credentials: "include", // send cookies
+          body: JSON.stringify({}),
+        });
+
+        if (!res.ok) {
+          const text = await res.text();
+          console.error("viewReminder failed:", res.status, text);
+          return;
+        }
+
+        const data = await res.json();
+        console.log("viewReminder data:", data);
+
+        let raw: any[] = [];
+        if (Array.isArray(data)) raw = data;
+        else if (Array.isArray((data as any).reminders)) raw = (data as any).reminders;
+        else {
+          console.warn("Unexpected viewReminder payload", data);
+          return;
+        }
+
+        const mapped: Reminder[] = raw.map((r: any, index: number) => ({
+          id: `${r.title ?? "reminder"}-${index}`,
+          title: r.title ?? r.name ?? r.text ?? "",
+          done:
+            r.status === "complete" ||
+            r.status === "completed" ||
+            r.completed === true ||
+            r.done === true,
+        }));
+
+        setReminders(mapped);
+      } catch (err) {
+        console.error("Failed to load reminders:", err);
+      }
+    };
+
+    loadReminders();
+  }, []);
+
+  //create a new reminder
   const add = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!title.trim()) return;
-    const id = (globalThis.crypto && "randomUUID" in globalThis.crypto)
-      ? (globalThis.crypto as Crypto).randomUUID()
-      : Math.random().toString(36).slice(2);
-    setReminders((rs) => [{ id, title: title.trim(), done: false }, ...rs]);
-  try {
-    const res = await fetch("/api/createReminder", {
-    method: "POST",
-    credentials: "include", // sends cookies
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ title }),
-  });
 
-  if (!res.ok) {
-    const text = await res.text();
-    console.error("createReminder failed:", res.status, text);
-  } else {
-    const data = await res.json();
-    console.log("Reminder created:", data);
-  }
-  } catch (err) {
-    console.error("Failed to create reminder:", err);
-  }
+    const trimmed = title.trim();
+    const id =
+      globalThis.crypto && "randomUUID" in globalThis.crypto
+        ? (globalThis.crypto as Crypto).randomUUID()
+        : Math.random().toString(36).slice(2);
+
+    setReminders((rs) => [{ id, title: trimmed, done: false }, ...rs]);
+
+    try {
+      const res = await fetch("/api/createReminder", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        credentials: "include",
+        body: JSON.stringify({ title: trimmed }),
+      });
+
+      if (!res.ok) {
+        const text = await res.text();
+        console.error("createReminder failed:", res.status, text);
+      } else {
+        const data = await res.json().catch(() => null);
+        console.log("Reminder created:", data);
+      }
+    } catch (err) {
+      console.error("Failed to create reminder:", err);
+    }
+
     setTitle("");
     setOpen(false);
   };
-  const toggle = (id: string) => setReminders((rs) => rs.map((r) => (r.id === id ? { ...r, done: !r.done } : r)));
-  const clearCompleted = () => setReminders((rs) => rs.filter((r) => !r.done));
+
+  const toggle = async (id: string) => {
+    const current = reminders.find((r) => r.id === id);
+    if (!current) return;
+
+    const willBeDone = !current.done;
+
+    setReminders((rs) =>
+      rs.map((r) => (r.id === id ? { ...r, done: willBeDone } : r))
+    );
+
+    if (willBeDone) {
+      try {
+        const res = await fetch("/api/completeReminder", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          credentials: "include",
+          body: JSON.stringify({ title: current.title }),
+        });
+
+        if (!res.ok) {
+          const text = await res.text();
+          console.error("completeReminder failed:", res.status, text);
+        }
+      } catch (err) {
+        console.error("Failed to complete reminder:", err);
+      }
+    }
+  };
+
+  //clear all completed reminders (and delete in backend)
+  const clearCompleted = async () => {
+    const completed = reminders.filter((r) => r.done);
+    if (completed.length === 0) return;
+
+    setReminders((rs) => rs.filter((r) => !r.done));
+
+    try {
+      await Promise.all(
+        completed.map((r) =>
+          fetch("/api/deleteReminder", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            credentials: "include",
+            body: JSON.stringify({ title: r.title }),
+          }).then(async (res) => {
+            if (!res.ok) {
+              const text = await res.text();
+              console.error(
+                "deleteReminder failed for",
+                r.title,
+                res.status,
+                text
+              );
+            }
+          })
+        )
+      );
+    } catch (err) {
+      console.error("Failed to delete completed reminders:", err);
+    }
+  };
 
   return (
     <PageShell title="Reminders" subtitle={`${active.length} active reminders`}>
@@ -59,13 +179,27 @@ export default function RemindersPage() {
             <strong>Active Reminders</strong>
           </div>
           <div className="list" style={{ marginTop: 8 }}>
-            {active.length === 0 && <div style={{ color: "var(--muted)" }}>No active reminders.</div>}
+            {active.length === 0 && (
+              <div style={{ color: "var(--muted)" }}>No active reminders.</div>
+            )}
             {active.map((r) => (
-              <div key={r.id} className="list-item" style={{ background: "rgba(255,255,255,.06)" }}>
+              <div
+                key={r.id}
+                className="list-item"
+                style={{ background: "rgba(255,255,255,.06)" }}
+              >
                 <div className="hstack" style={{ gap: 12 }}>
-                  <button onClick={() => toggle(r.id)} aria-label="Mark complete" style={{
-                    width: 18, height: 18, borderRadius: 18, border: "2px solid #facc15", background: "transparent"
-                  }} />
+                  <button
+                    onClick={() => toggle(r.id)}
+                    aria-label="Mark complete"
+                    style={{
+                      width: 18,
+                      height: 18,
+                      borderRadius: 18,
+                      border: "2px solid #facc15",
+                      background: "transparent",
+                    }}
+                  />
                   <div style={{ fontWeight: 600 }}>{r.title}</div>
                 </div>
               </div>
@@ -77,29 +211,84 @@ export default function RemindersPage() {
           <div className="hstack" style={{ gap: 8, marginBottom: 8 }}>
             <span style={{ color: "#a0e0a0" }}>🔔</span>
             <strong>Completed</strong>
-            {doneCount > 0 && <button className="btn" style={{ marginLeft: "auto" }} onClick={clearCompleted}>Clear Completed</button>}
+            {doneCount > 0 && (
+              <button
+                className="btn"
+                style={{ marginLeft: "auto" }}
+                onClick={clearCompleted}
+              >
+                Clear Completed
+              </button>
+            )}
           </div>
           <div className="list" style={{ marginTop: 8 }}>
-            {doneCount === 0 && <div style={{ color: "var(--muted)" }}>No completed reminders yet.</div>}
-            {reminders.filter((r) => r.done).map((r) => (
-              <div key={r.id} className="list-item" style={{ background: "rgba(255,255,255,.04)" }}>
-                <div className="hstack" style={{ gap: 12 }}>
-                  <span style={{ width: 12, height: 12, borderRadius: 12, background: "#34d399" }} />
-                  <div style={{ textDecoration: "line-through", color: "var(--muted)", fontWeight: 600 }}>{r.title}</div>
-                </div>
+            {doneCount === 0 && (
+              <div style={{ color: "var(--muted)" }}>
+                No completed reminders yet.
               </div>
-            ))}
+            )}
+            {reminders
+              .filter((r) => r.done)
+              .map((r) => (
+                <div
+                  key={r.id}
+                  className="list-item"
+                  style={{ background: "rgba(255,255,255,.04)" }}
+                >
+                  <div className="hstack" style={{ gap: 12 }}>
+                    <span
+                      style={{
+                        width: 12,
+                        height: 12,
+                        borderRadius: 12,
+                        background: "#34d399",
+                      }}
+                    />
+                    <div
+                      style={{
+                        textDecoration: "line-through",
+                        color: "var(--muted)",
+                        fontWeight: 600,
+                      }}
+                    >
+                      {r.title}
+                    </div>
+                  </div>
+                </div>
+              ))}
           </div>
         </GlassCard>
 
-        <div style={{ display: "grid", gridTemplateColumns: "repeat(2,1fr)", gap: 16 }}>
-          <GlassCard className="vstack" style={{ padding: 16, textAlign: "center" }}>
+        <div
+          style={{
+            display: "grid",
+            gridTemplateColumns: "repeat(2,1fr)",
+            gap: 16,
+          }}
+        >
+          <GlassCard
+            className="vstack"
+            style={{ padding: 16, textAlign: "center" }}
+          >
             <div style={{ color: "var(--muted)" }}>Active</div>
-            <div style={{ fontSize: 28, fontWeight: 700 }}>{active.length}</div>
+            <div style={{ fontSize: 28, fontWeight: 700 }}>
+              {active.length}
+            </div>
           </GlassCard>
-          <GlassCard className="vstack" style={{ padding: 16, textAlign: "center" }}>
+          <GlassCard
+            className="vstack"
+            style={{ padding: 16, textAlign: "center" }}
+          >
             <div style={{ color: "var(--muted)" }}>Completed</div>
-            <div style={{ fontSize: 28, fontWeight: 700, color: "#34d399" }}>{doneCount}</div>
+            <div
+              style={{
+                fontSize: 28,
+                fontWeight: 700,
+                color: "#34d399",
+              }}
+            >
+              {doneCount}
+            </div>
           </GlassCard>
         </div>
 
@@ -121,7 +310,8 @@ export default function RemindersPage() {
                 fontSize: 28,
                 display: "grid",
                 placeItems: "center",
-                boxShadow: "0 10px 30px rgba(0,0,0,.35), 0 4px 10px rgba(249,115,22,.25)",
+                boxShadow:
+                  "0 10px 30px rgba(0,0,0,.35), 0 4px 10px rgba(249,115,22,.25)",
                 cursor: "pointer",
                 zIndex: 55,
               }}
@@ -132,17 +322,33 @@ export default function RemindersPage() {
           <DialogContent>
             <DialogHeader>
               <DialogTitle>Add New Reminder</DialogTitle>
-              <div style={{ color: "var(--muted)" }}>Add a quick reminder to help you remember important things.</div>
+              <div style={{ color: "var(--muted)" }}>
+                Add a quick reminder to help you remember important things.
+              </div>
             </DialogHeader>
             <form onSubmit={add} className="vstack" style={{ gap: 10 }}>
-              <label className="label" htmlFor="r-title">Reminder</label>
-              <input id="r-title" className="input" placeholder="Enter reminder text..." value={title} onChange={(e) => setTitle(e.target.value)} />
+              <label className="label" htmlFor="r-title">
+                Reminder
+              </label>
+              <input
+                id="r-title"
+                className="input"
+                placeholder="Enter reminder text..."
+                value={title}
+                onChange={(e) => setTitle(e.target.value)}
+              />
 
-              <button className="btn" type="submit" style={{
-                background: "linear-gradient(135deg, #f59e0b, #f97316)",
-                border: "none",
-                fontWeight: 600,
-              }}>Add Reminder</button>
+              <button
+                className="btn"
+                type="submit"
+                style={{
+                  background: "linear-gradient(135deg, #f59e0b, #f97316)",
+                  border: "none",
+                  fontWeight: 600,
+                }}
+              >
+                Add Reminder
+              </button>
             </form>
           </DialogContent>
         </Dialog>
@@ -150,4 +356,3 @@ export default function RemindersPage() {
     </PageShell>
   );
 }
-
