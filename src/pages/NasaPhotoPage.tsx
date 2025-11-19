@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import PageShell from '../components/PageShell';
 import GlassCard from '../components/GlassCard';
 import { Camera, Calendar, Info } from 'lucide-react';
@@ -7,7 +7,8 @@ type NasaPhoto = {
   title: string;
   date: string;
   explanation: string;
-  url: string;
+  hdurl: string;
+  thumbnailUrl: string;
   copyright: string;
 };
 
@@ -19,17 +20,65 @@ type RecentPhoto = {
 };
 
 export default function NasaPhotoPage() {
-  const [photoData] = useState<NasaPhoto>({
-    title: '',
-    date: '',
-    explanation: '',
-    url: '',
-    copyright: ''
-  });
+  const [photoData, setPhotoData] = useState<NasaPhoto | null>(null);
+  const [recentPhotos, setRecentPhotos] = useState<RecentPhoto[]>([]);
+  const [loading, setLoading] = useState(true);
 
-  const [recentPhotos] = useState<RecentPhoto[]>([]);
+  useEffect(() => {
+    async function fetchAPOD() {
+      try {
+        const today = new Date().toISOString().split('T')[0];
 
-  const photoLoaded = photoData.url !== '';
+        const res = await fetch('/api/viewAPOD', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            accessToken: localStorage.getItem('token'),
+            date: today
+          })
+        });
+        const data = await res.json();
+        if (data.success) {
+          setPhotoData({
+            title: data.title,
+            date: today,
+            explanation: data.explanation,
+            hdurl: data.hdurl,
+            thumbnailUrl: data.thumbnailUrl,
+            copyright: data.copyright
+          });
+        }
+
+        const recentRes = await fetch('/api/recentAPODs', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            accessToken: localStorage.getItem('token'),
+            limit: 3
+          })
+        });
+        const recentData = await recentRes.json();
+        if (recentData.success) {
+          setRecentPhotos(
+            recentData.photos.map((p: any, i: number) => ({
+              id: i,
+              title: p.title,
+              date: p.date,
+              thumbnail: p.thumbnailUrl
+            }))
+          );
+        }
+      } catch (error) {
+        console.error('Failed to fetch NASA photos:', error);
+      } finally {
+        setLoading(false);
+      }
+    }
+
+    fetchAPOD();
+  }, []);
+
+  const photoLoaded = !!photoData;
   const recentPhotosLoaded = recentPhotos.length > 0;
 
   return (
@@ -38,7 +87,9 @@ export default function NasaPhotoPage() {
 
         {/* Main Photo */}
         <GlassCard style={{ padding: 16 }}>
-          {photoLoaded ? (
+          {loading ? (
+            <div style={{ color: 'rgba(255,255,255,0.6)' }}>Loading NASA photo...</div>
+          ) : photoLoaded ? (  
             <>
               <div style={{ marginBottom: 8 }}>
                 <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'start' }}>
@@ -51,7 +102,7 @@ export default function NasaPhotoPage() {
               </div>
 
               <div style={{ borderRadius: 12, overflow: 'hidden', marginBottom: 8 }}>
-                <img src={photoData.url} alt={photoData.title} style={{ width: '100%', display: 'block' }} />
+                <img src={photoData.hdurl} alt={photoData.title} style={{ width: '100%', display: 'block' }} />
               </div>
 
               <div style={{ display: 'grid', gap: 12 }}>
@@ -70,7 +121,7 @@ export default function NasaPhotoPage() {
               </div>
            </>
           ) : (
-            <div style={{ color: 'rbga(255,255,255,0.6)' }}>Loading NASA photo...</div>
+            <div style={{ color: 'rgba(255,255,255,0.6)' }}>No photo available.</div>
           )}  
           </GlassCard>
 

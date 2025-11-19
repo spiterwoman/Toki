@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { Sunrise, Sunset, Calendar, Droplets, Wind, Eye, Gauge } from 'lucide-react';
 import PageShell from '../components/PageShell';
 import GlassCard from '../components/GlassCard';
@@ -22,7 +22,7 @@ type Weekly = { day: string; emoji: string; high: number | string; low: number |
 
 export default function WeatherPage() {
 
-  const [weather] = useState<CurrentWeather>({
+  const [weather, setWeather] = useState<CurrentWeather>({
     location: '',
     emoji: '',
     condition: '',
@@ -36,11 +36,61 @@ export default function WeatherPage() {
     sunset: '',
   });
 
-  const [hourlyForecast] = useState<Hourly[]>([]);
-  const [weeklyForecast] = useState<Weekly[]>([]);
+  const [hourlyForecast, setHourlyForecast] = useState<Hourly[]>([]);
+  const [weeklyForecast, setWeeklyForecast] = useState<Weekly[]>([]);
 
   const formatValue = (value: number | string | null | undefined, placeholder = '--') =>
     value !== null && value !== undefined ? value : placeholder;
+
+  // Map condition to emoji
+  const conditionToEmoji = (condition: string | undefined) => {
+    if(!condition) return '❓';
+    const c = condition.toLowerCase();
+    if (c.includes('sunny') || c.includes('clear')) return '☀️';
+    if (c.includes('cloud')) return '☁️';
+    if (c.includes('rain')) return '🌧️';
+    if (c.includes('snow')) return '❄️';
+    if (c.includes('thunder')) return '⛈️';
+    if (c.includes('fog') || c.includes('mist')) return '🌫️';
+    return '🌡️';
+  }
+
+  useEffect(() => {
+    async function fetchWeather() {
+      try {
+        const res = await fetch('/api/viewWeather', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({}),
+        });
+
+        const data = await res.json();
+        if (data.success) {
+          const w = data.weather;
+          setWeather({
+            location: w.location,
+            emoji: conditionToEmoji(w.forecast),
+            condition: w.forecast,
+            temperature: w.high,
+            feelsLike: null,
+            humidity: w.humid,
+            windSpeed: w.windSpeed,
+            visibility: w.vis,
+            pressure: w.pressure,
+            sunrise: w.sunrise,
+            sunset: w.sunset,
+          });
+
+          if (w.hourly) setHourlyForecast(w.hourly);
+          if (w.weekly) setWeeklyForecast(w.weekly);
+        }
+      } catch (err) {
+        console.error('Failed to fetch weather data:', err);
+      }
+    }
+
+    fetchWeather();
+  }, []);
 
   return (
     <>
