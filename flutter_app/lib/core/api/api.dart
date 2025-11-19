@@ -3,16 +3,20 @@ import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 
 class Api {
   final Dio _dio;
-  final FlutterSecureStorage _store = const FlutterSecureStorage();
+  final FlutterSecureStorage _store;
 
+  // -----------------------------
+  // NORMAL CONSTRUCTOR (production)
+  // -----------------------------
   Api(String baseUrl)
       : _dio = Dio(BaseOptions(
           baseUrl: baseUrl,
           connectTimeout: const Duration(seconds: 20),
           receiveTimeout: const Duration(seconds: 20),
           headers: {'Accept': 'application/json'},
-        )) {
-    // Attach access token automatically if present
+        )),
+        _store = const FlutterSecureStorage() {
+
     _dio.interceptors.add(InterceptorsWrapper(
       onRequest: (options, handler) async {
         final token = await _store.read(key: 'accessToken');
@@ -22,6 +26,164 @@ class Api {
         handler.next(options);
       },
     ));
+  }
+
+  // -----------------------------
+  // TEST-ONLY CONSTRUCTOR (mockable)
+  // -----------------------------
+  Api.forTesting({
+    required Dio dio,
+    required FlutterSecureStorage store,
+  })  : _dio = dio,
+        _store = store;
+  
+
+  // ===== Helpers for auth body  =========================================
+
+  Future<Map<String, dynamic>> _buildAuthBody(
+      [Map<String, dynamic>? extra]) async {
+    final accessToken = await _store.read(key: 'accessToken');
+    final userId = await _store.read(key: 'userId');
+
+    if (accessToken == null || userId == null) {
+      throw Exception('Not logged in (missing userId or accessToken).');
+    }
+
+    return {
+      'userId': userId,
+      'accessToken': accessToken,
+      if (extra != null) ...extra,
+    };
+  }
+
+  // ===== Reminders =======================================================
+
+  /// Create a reminder (backend: POST /api/createReminder)
+  Future<Map<String, dynamic>> createReminder({
+    required String title,
+    required String desc,
+    required String status,
+    required String priority,
+    required DateTime dueDate,
+  }) async {
+    final body = await _buildAuthBody({
+      'title': title,
+      'desc': desc,
+      'status': status,
+      'priority': priority,
+      'year': dueDate.year,
+      'month': dueDate.month,
+      'day': dueDate.day,
+    });
+
+    try {
+      final res = await _dio.post('/api/createReminder', data: body);
+      return Map<String, dynamic>.from(res.data);
+    } on DioException catch (e) {
+      if (e.response != null) {
+        throw Exception(
+          'Server error: ${e.response?.statusCode} ${e.response?.data}',
+        );
+      } else {
+        throw Exception('Network error: ${e.message}');
+      }
+    }
+  }
+
+  /// View all reminders (backend: POST /api/viewReminder)
+  Future<Map<String, dynamic>> viewReminders({String? reminderId}) async {
+    final body = await _buildAuthBody(
+      reminderId != null ? {'reminderId': reminderId} : null,
+    );
+
+    try {
+      final res = await _dio.post('/api/viewReminder', data: body);
+      return Map<String, dynamic>.from(res.data);
+    } on DioException catch (e) {
+      if (e.response != null) {
+        throw Exception(
+          'Server error: ${e.response?.statusCode} ${e.response?.data}',
+        );
+      } else {
+        throw Exception('Network error: ${e.message}');
+      }
+    }
+  }
+
+  /// Mark a reminder as completed (backend: POST /api/completeReminder)
+  Future<Map<String, dynamic>> completeReminder({
+    required String title,
+  }) async {
+    final body = await _buildAuthBody({
+      'title': title,
+    });
+
+    try {
+      final res = await _dio.post('/api/completeReminder', data: body);
+      return Map<String, dynamic>.from(res.data);
+    } on DioException catch (e) {
+      if (e.response != null) {
+        throw Exception(
+          'Server error: ${e.response?.statusCode} ${e.response?.data}',
+        );
+      } else {
+        throw Exception('Network error: ${e.message}');
+      }
+    }
+  }
+
+  /// Delete a reminder (backend: POST /api/deleteReminder)
+  Future<Map<String, dynamic>> deleteReminder({
+    required String title,
+  }) async {
+    final body = await _buildAuthBody({
+      'title': title,
+    });
+
+    try {
+      final res = await _dio.post('/api/deleteReminder', data: body);
+      return Map<String, dynamic>.from(res.data);
+    } on DioException catch (e) {
+      if (e.response != null) {
+        throw Exception(
+          'Server error: ${e.response?.statusCode} ${e.response?.data}',
+        );
+      } else {
+        throw Exception('Network error: ${e.message}');
+      }
+    }
+  }
+
+  /// Edit a reminder (backend: POST /api/editReminder)
+  Future<Map<String, dynamic>> editReminder({
+    required String title,
+    required String desc,
+    required String status,
+    required String priority,
+    required DateTime dueDate,
+  }) async {
+    final body = await _buildAuthBody({
+      'title': title,
+      'desc': desc,
+      'status': status,
+      'priority': priority,
+      'year': dueDate.year,
+      'month': dueDate.month,
+      'day': dueDate.day,
+    });
+
+    try {
+      final res = await _dio.post('/api/editReminder', data: body);
+      return Map<String, dynamic>.from(res.data);
+    } on DioException catch (e) {
+      if (e.response != null) {
+        throw Exception(
+          'Server error: ${e.response?.statusCode} ${e.response?.data}',
+        );
+      } else {
+        throw Exception('Network error: ${e.message}');
+      }
+    }
   }
 
   // ---- Auth & User ----
@@ -85,59 +247,280 @@ class Api {
     return map; // { id, accessToken, error: 'success, send to Dashboard page' } on success
   }
 
-/*
-  Future<Map<String, dynamic>> sendVerEmail({
-    required String email,
-    required int verificationToken,
-  }) async {
-    
-  }
+  // ===== Tasks ==========================================================
 
-*/
-
-  Future<Map<String, dynamic>> createReminder({
-    required String userId,
-    required String accessToken,
+  /// Create a task (backend: POST /api/createTask)
+  ///
+  /// Server defaults:
+  /// - description -> '' if omitted
+  /// - status -> 'not started' if omitted
+  /// - priority -> 'medium' if omitted
+  /// - dueDate -> null if omitted
+  /// - completed -> {isCompleted:false, completedAt:null} if omitted
+  Future<Map<String, dynamic>> createTask({
     required String title,
-    required String desc,
-    required String status,
-    required String priority,
-    required DateTime dueDate
+    String? description,
+    String? status,
+    String? priority,
+    DateTime? dueDate,
+    bool? isCompleted,
+    DateTime? completedAt,
   }) async {
-    try {
-      // Backend expects year, month, day in the body
-      final body = {
-        'userId': userId,
-        'accessToken': accessToken,
-        'title': title,
-        'desc': desc,
-        'status': status,
-        'priority': priority,
-        'year': dueDate.year,
-        'month': dueDate.month,
-        'day': dueDate.day,
+    final extra = <String, dynamic>{
+      'title': title,
+    };
+
+    if (description != null) extra['description'] = description;
+    if (status != null) extra['status'] = status;
+    if (priority != null) extra['priority'] = priority;
+    if (dueDate != null) extra['dueDate'] = dueDate.toIso8601String();
+
+    // Only send "completed" if caller provides something
+    if (isCompleted != null || completedAt != null) {
+      extra['completed'] = {
+        'isCompleted': isCompleted ?? false,
+        'completedAt': completedAt?.toIso8601String(),
       };
+    }
 
-      final response = await _dio.post(
-        '/api/createReminder',
-        data: body,
-      );
+    final body = await _buildAuthBody(extra);
 
-      return Map<String, dynamic>.from(response.data);
-
+    try {
+      final res = await _dio.post('/api/createTask', data: body);
+      return Map<String, dynamic>.from(res.data);
     } on DioException catch (e) {
-      // Handle HTTP or network errors
       if (e.response != null) {
-        // Server responded with error status
         throw Exception(
           'Server error: ${e.response?.statusCode} ${e.response?.data}',
         );
       } else {
-        // No response (timeout, no internet, etc.)
         throw Exception('Network error: ${e.message}');
       }
-    } catch (e) {
-      throw Exception('Unexpected error: $e');
+    }
+  }
+
+  /// View tasks (backend: POST /api/viewTask)
+  ///
+  /// - If [taskId] is provided: returns a single task.
+  /// - If [taskId] is null: returns all tasks for the user.
+  Future<Map<String, dynamic>> viewTasks({String? taskId}) async {
+    final body = await _buildAuthBody(
+      taskId != null ? {'taskId': taskId} : null,
+    );
+
+    try {
+      final res = await _dio.post('/api/viewTask', data: body);
+      return Map<String, dynamic>.from(res.data);
+    } on DioException catch (e) {
+      if (e.response != null) {
+        throw Exception(
+          'Server error: ${e.response?.statusCode} ${e.response?.data}',
+        );
+      } else {
+        throw Exception('Network error: ${e.message}');
+      }
+    }
+  }
+
+  /// Edit a task (backend: POST /api/editTask)
+  ///
+  /// All fields except [taskId] are optional; only non-null fields are sent
+  /// and will be updated on the server.
+  Future<Map<String, dynamic>> editTask({
+    required String taskId,
+    String? title,
+    String? description,
+    String? status,
+    String? priority,
+    DateTime? dueDate,
+    bool? isCompleted,
+    DateTime? completedAt,
+  }) async {
+    final extra = <String, dynamic>{
+      'taskId': taskId,
+    };
+
+    if (title != null) extra['title'] = title;
+    if (description != null) extra['description'] = description;
+    if (status != null) extra['status'] = status;
+    if (priority != null) extra['priority'] = priority;
+    if (dueDate != null) extra['dueDate'] = dueDate.toIso8601String();
+
+    if (isCompleted != null || completedAt != null) {
+      extra['completed'] = {
+        'isCompleted': isCompleted ?? false,
+        'completedAt': completedAt?.toIso8601String(),
+      };
+    }
+
+    final body = await _buildAuthBody(extra);
+
+    try {
+      final res = await _dio.post('/api/editTask', data: body);
+      return Map<String, dynamic>.from(res.data);
+    } on DioException catch (e) {
+      if (e.response != null) {
+        throw Exception(
+          'Server error: ${e.response?.statusCode} ${e.response?.data}',
+        );
+      } else {
+        throw Exception('Network error: ${e.message}');
+      }
+    }
+  }
+
+  /// Delete a task (backend: POST /api/deleteTask)
+  Future<Map<String, dynamic>> deleteTask({
+    required String taskId,
+  }) async {
+    final body = await _buildAuthBody({
+      'taskId': taskId,
+    });
+
+    try {
+      final res = await _dio.post('/api/deleteTask', data: body);
+      return Map<String, dynamic>.from(res.data);
+    } on DioException catch (e) {
+      if (e.response != null) {
+        throw Exception(
+          'Server error: ${e.response?.statusCode} ${e.response?.data}',
+        );
+      } else {
+        throw Exception('Network error: ${e.message}');
+      }
+    }
+  }
+
+  // ===== Calendar Events ===============================================
+
+  /// Create a calendar event (backend: POST /api/createCalendarEvent)
+  ///
+  /// Server expects:
+  ///   title, description, location, startDate, endDate, color, allDay, reminder
+  /// and will default color/allDay/reminder to {} if omitted.
+  Future<Map<String, dynamic>> createCalendarEvent({
+    required String title,
+    String? description,
+    String? location,
+    DateTime? startDate,
+    DateTime? endDate,
+    Map<String, dynamic>? color,
+    Map<String, dynamic>? allDay,
+    Map<String, dynamic>? reminder,
+  }) async {
+    final extra = <String, dynamic>{
+      'title': title,
+    };
+
+    if (description != null) extra['description'] = description;
+    if (location != null) extra['location'] = location;
+    if (startDate != null) extra['startDate'] = startDate.toIso8601String();
+    if (endDate != null) extra['endDate'] = endDate.toIso8601String();
+    if (color != null) extra['color'] = color;
+    if (allDay != null) extra['allDay'] = allDay;
+    if (reminder != null) extra['reminder'] = reminder;
+
+    final body = await _buildAuthBody(extra);
+
+    try {
+      final res = await _dio.post('/api/createCalendarEvent', data: body);
+      return Map<String, dynamic>.from(res.data);
+    } on DioException catch (e) {
+      if (e.response != null) {
+        throw Exception(
+          'Server error: ${e.response?.statusCode} ${e.response?.data}',
+        );
+      } else {
+        throw Exception('Network error: ${e.message}');
+      }
+    }
+  }
+
+  /// View calendar events (backend: POST /api/viewCalendarEvent)
+  ///
+  /// - If [eventId] is provided: returns a single event (`event` field).
+  /// - If [eventId] is null: returns all events (`events` field).
+  Future<Map<String, dynamic>> viewCalendarEvents({String? eventId}) async {
+    final body = await _buildAuthBody(
+      eventId != null ? {'eventId': eventId} : null,
+    );
+
+    try {
+      final res = await _dio.post('/api/viewCalendarEvent', data: body);
+      return Map<String, dynamic>.from(res.data);
+    } on DioException catch (e) {
+      if (e.response != null) {
+        throw Exception(
+          'Server error: ${e.response?.statusCode} ${e.response?.data}',
+        );
+      } else {
+        throw Exception('Network error: ${e.message}');
+      }
+    }
+  }
+
+  /// Edit a calendar event (backend: POST /api/editCalendarEvent)
+  ///
+  /// Only non-null fields are sent and updated server-side.
+  Future<Map<String, dynamic>> editCalendarEvent({
+    required String eventId,
+    String? title,
+    String? description,
+    String? location,
+    DateTime? startDate,
+    DateTime? endDate,
+    Map<String, dynamic>? color,
+    Map<String, dynamic>? allDay,
+    Map<String, dynamic>? reminder,
+  }) async {
+    final extra = <String, dynamic>{
+      'eventId': eventId,
+    };
+
+    if (title != null) extra['title'] = title;
+    if (description != null) extra['description'] = description;
+    if (location != null) extra['location'] = location;
+    if (startDate != null) extra['startDate'] = startDate.toIso8601String();
+    if (endDate != null) extra['endDate'] = endDate.toIso8601String();
+    if (color != null) extra['color'] = color;
+    if (allDay != null) extra['allDay'] = allDay;
+    if (reminder != null) extra['reminder'] = reminder;
+
+    final body = await _buildAuthBody(extra);
+
+    try {
+      final res = await _dio.post('/api/editCalendarEvent', data: body);
+      return Map<String, dynamic>.from(res.data);
+    } on DioException catch (e) {
+      if (e.response != null) {
+        throw Exception(
+          'Server error: ${e.response?.statusCode} ${e.response?.data}',
+        );
+      } else {
+        throw Exception('Network error: ${e.message}');
+      }
+    }
+  }
+
+  /// Delete a calendar event (backend: POST /api/deleteCalendarEvent)
+  Future<Map<String, dynamic>> deleteCalendarEvent({
+    required String eventId,
+  }) async {
+    final body = await _buildAuthBody({
+      'eventId': eventId,
+    });
+
+    try {
+      final res = await _dio.post('/api/deleteCalendarEvent', data: body);
+      return Map<String, dynamic>.from(res.data);
+    } on DioException catch (e) {
+      if (e.response != null) {
+        throw Exception(
+          'Server error: ${e.response?.statusCode} ${e.response?.data}',
+        );
+      } else {
+        throw Exception('Network error: ${e.message}');
+      }
     }
   }
 
@@ -200,4 +583,141 @@ class Api {
       throw Exception('Unexpected error: $e');
     }
   }
+
+  // ---- NASA APOD: Recent photos ----
+
+  /// Fetch the most recent APOD entries from the backend.
+  ///
+  /// Backend route: POST /api/recentAPODs
+  /// Body: { accessToken, limit }
+  ///
+  /// Expected response:
+  /// {
+  ///   success: true,
+  ///   photos: [
+  ///     {
+  ///       "date": "2025-11-16",
+  ///       "title": "...",
+  ///       "thumbnailUrl": "...",
+  ///       "hdurl": "...",
+  ///       "explanation": "...",
+  ///       "copyright": "..."
+  ///     },
+  ///     ...
+  ///   ],
+  ///   error: "",
+  ///   accessToken: "..."
+  /// }
+  Future<List<Map<String, dynamic>>> fetchRecentApods({
+    int limit = 6,
+  }) async {
+    final accessToken = await _store.read(key: 'accessToken');
+    if (accessToken == null) {
+      throw Exception('No access token found. User may not be logged in.');
+    }
+
+    try {
+      final response = await _dio.post(
+        '/api/recentAPODs',
+        data: {
+          'accessToken': accessToken,
+          'limit': limit,
+        },
+      );
+
+      final map = Map<String, dynamic>.from(response.data);
+
+      if (map['success'] != true) {
+        final err = map['error'] ?? 'Failed to fetch recent APODs.';
+        throw Exception(err.toString());
+      }
+
+      final photosRaw = map['photos'] ?? [];
+      final photos = List<Map<String, dynamic>>.from(
+        (photosRaw as List).map(
+          (p) => Map<String, dynamic>.from(p as Map),
+        ),
+      );
+
+      return photos;
+    } on DioException catch (e) {
+      if (e.response != null) {
+        throw Exception(
+          'Server error: ${e.response?.statusCode} ${e.response?.data}',
+        );
+      } else {
+        throw Exception('Network error: ${e.message}');
+      }
+    } catch (e) {
+      throw Exception('Unexpected error: $e');
+    }
+  }
+
+    // ===== UCF Garages / Parking =========================================
+
+  /// Fetch all garages from the backend.
+  ///
+  /// Backend route: POST /api/viewGarages
+  /// Body: { userId, accessToken }
+  ///
+  /// Expected response:
+  /// {
+  ///   success: true,
+  ///   garages: [
+  ///     {
+  ///       "garageName": "Garage A",
+  ///       "availableSpots": 250,
+  ///       "totalSpots": 1000,
+  ///       "percentFull": 75,
+  ///       "lastUpdated": "2025-11-18T03:12:45.123Z",
+  ///       "updatedAt": "...",
+  ///       "createdAt": "..."
+  ///     },
+  ///     ...
+  ///   ],
+  ///   error: "",
+  ///   accessToken: "..."
+  /// }
+  Future<List<Map<String, dynamic>>> viewGarages() async {
+    // Reuse the same auth body helper (userId + accessToken)
+    final body = await _buildAuthBody();
+
+    try {
+      final res = await _dio.post('/api/viewGarages', data: body);
+      final map = Map<String, dynamic>.from(res.data);
+
+      if (map['success'] != true) {
+        final err = map['error'] ?? 'Failed to fetch garage data.';
+        throw Exception(err.toString());
+      }
+
+      // If the backend refreshed the token, persist it
+      if (map['accessToken'] != null) {
+        await _store.write(
+          key: 'accessToken',
+          value: map['accessToken'].toString(),
+        );
+      }
+
+      final raw = map['garages'] ?? [];
+      final garages = List<Map<String, dynamic>>.from(
+        (raw as List).map(
+          (g) => Map<String, dynamic>.from(g as Map),
+        ),
+      );
+
+      return garages;
+    } on DioException catch (e) {
+      if (e.response != null) {
+        throw Exception(
+          'Server error: ${e.response?.statusCode} ${e.response?.data}',
+        );
+      } else {
+        throw Exception('Network error: ${e.message}');
+      }
+    } catch (e) {
+      throw Exception('Unexpected error: $e');
+    }
+  }
+
 }

@@ -3,6 +3,9 @@ import 'package:flutter/material.dart';
 
 import '../../core/widgets/page_shell.dart';
 import '../../core/widgets/glass_card.dart';
+import '../../core/api/api.dart';
+
+final api = Api('https://mytoki.app');
 
 class UcfParkingPage extends StatefulWidget {
   const UcfParkingPage({super.key});
@@ -254,6 +257,53 @@ class Garage {
       status: parseStatus(json['status'] as String? ?? 'Full'),
     );
   }
+
+  /// Factory for converting from the backend `parkinglocations` document.
+  ///
+  /// Expected fields:
+  /// - garageName: String
+  /// - availableSpots: int
+  /// - totalSpots: int
+  /// - percentFull: int (optional)
+  factory Garage.fromBackend(Map<String, dynamic> json) {
+    final name = json['garageName'] as String? ?? 'Unknown';
+
+    int parseInt(dynamic v) {
+      if (v is int) return v;
+      if (v is String) return int.tryParse(v) ?? 0;
+      return 0;
+    }
+
+    final total = parseInt(json['totalSpots']);
+    final available = parseInt(json['availableSpots']);
+
+    int? percentFull;
+    if (json['percentFull'] != null) {
+      percentFull = parseInt(json['percentFull']);
+    } else if (total > 0) {
+      final full = total - available;
+      percentFull = ((full / total) * 100).round();
+    }
+
+    // Derive status from % full
+    final pf = (percentFull ?? 0).clamp(0, 100);
+    late final GarageStatus status;
+    if (pf >= 90) {
+      status = GarageStatus.full;
+    } else if (pf >= 70) {
+      status = GarageStatus.limited;
+    } else {
+      status = GarageStatus.available;
+    }
+
+    return Garage(
+      id: json['_id']?.toString() ?? name,
+      name: name,
+      capacity: total,
+      available: available,
+      status: status,
+    );
+  }
 }
 
 // ===== widgets =========================================================
@@ -328,35 +378,12 @@ class _ProgressBar extends StatelessWidget {
   }
 }
 
-// ===== service stub ====================================================
-
-// TODO: Replace this with real UCF parking service implementation.
-// For now, this is mock data
+// ===== service ====================================================
 
 Future<List<Garage>> fetchUcfParking() async {
-  // Example mock data:
-  await Future.delayed(const Duration(milliseconds: 500));
-  return [
-    Garage(
-      id: 'A',
-      name: 'Garage A',
-      capacity: 1000,
-      available: 250,
-      status: GarageStatus.limited,
-    ),
-    Garage(
-      id: 'B',
-      name: 'Garage B',
-      capacity: 800,
-      available: 600,
-      status: GarageStatus.available,
-    ),
-    Garage(
-      id: 'C',
-      name: 'Garage C',
-      capacity: 900,
-      available: 50,
-      status: GarageStatus.full,
-    ),
-  ];
+  // Call backend API via api.dart
+  final rawGarages = await api.viewGarages();
+
+  // Map backend docs -> UI model
+  return rawGarages.map((g) => Garage.fromBackend(g)).toList();
 }

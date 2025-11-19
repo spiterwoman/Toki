@@ -23,7 +23,7 @@ class _LoginPageState extends State<LoginPage> {
       );
       final err = (res['error'] ?? '').toString();
 
-      if (err.contains('send to verify page')) {
+      if (err.contains('Please verify email')) {
         // server also sent verificationToken
         Navigator.of(context).pushNamed('/verify', arguments: {
           'email': _emailCtrl.text.trim(),

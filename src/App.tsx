@@ -19,7 +19,7 @@ export default function App(){
       <Route path="/" element={<Navigate to="/login" replace />} />
       <Route path="/login" element={<LoginPage />} />
       <Route path="/signup" element={<SignupPage />} />
-      <Route path="/verify" element={<VerificationPage onVerify={() => navigate("/daily-summary")}/>} />
+      <Route path="/verify" element={<VerificationPage onVerify={() => { navigate("/daily-summary"); return true; }}/>} />
       <Route path="/daily-summary" element={<DailySummaryPage />} />
       <Route path="/calendar" element={<CalendarPage />} />
       <Route path="/tasks" element={<TasksPage />} />
