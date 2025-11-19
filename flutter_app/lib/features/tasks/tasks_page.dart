@@ -154,7 +154,10 @@ class _TasksPageState extends State<TasksPage> {
     });
 
     try {
-      await api.deleteTask(taskId: id);
+      // find the task by id so we can get its title
+      final task = _tasks.firstWhere((t) => t.id == id);
+
+      await api.deleteTask(title: task.title);
       await _loadTasksFromServer();
     } catch (e) {
       setState(() {
@@ -163,6 +166,7 @@ class _TasksPageState extends State<TasksPage> {
       });
     }
   }
+
 
   Future<void> _clearCompleted() async {
     final ids = _tasks.where((t) => t.done).map((t) => t.id).toList();
@@ -175,7 +179,8 @@ class _TasksPageState extends State<TasksPage> {
 
     try {
       for (final id in ids) {
-        await api.deleteTask(taskId: id);
+        final task = _tasks.firstWhere((t) => t.id == id);
+        await api.deleteTask(title: task.title);
       }
       await _loadTasksFromServer();
     } catch (e) {
@@ -185,6 +190,7 @@ class _TasksPageState extends State<TasksPage> {
       });
     }
   }
+
 
   Future<void> _openAddTaskDialog() async {
     final newTask = await showDialog<_Task>(

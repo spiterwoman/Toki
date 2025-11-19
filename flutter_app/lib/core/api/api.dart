@@ -9,23 +9,27 @@ class Api {
   // NORMAL CONSTRUCTOR (production)
   // -----------------------------
   Api(String baseUrl)
-      : _dio = Dio(BaseOptions(
-          baseUrl: baseUrl,
-          connectTimeout: const Duration(seconds: 20),
-          receiveTimeout: const Duration(seconds: 20),
-          headers: {'Accept': 'application/json'},
-        )),
+      : _dio = Dio(
+          BaseOptions(
+            baseUrl: baseUrl,
+            connectTimeout: const Duration(seconds: 20),
+            receiveTimeout: const Duration(seconds: 20),
+            headers: {'Accept': 'application/json'},
+          ),
+        ),
         _store = const FlutterSecureStorage() {
-
-    _dio.interceptors.add(InterceptorsWrapper(
-      onRequest: (options, handler) async {
-        final token = await _store.read(key: 'accessToken');
-        if (token != null && token.isNotEmpty) {
-          options.headers['Authorization'] = 'Bearer $token';
-        }
-        handler.next(options);
-      },
-    ));
+    // Attach JWT from secure storage as Authorization: Bearer <token>
+    _dio.interceptors.add(
+      InterceptorsWrapper(
+        onRequest: (options, handler) async {
+          final token = await _store.read(key: 'accessToken');
+          if (token != null && token.isNotEmpty) {
+            options.headers['Authorization'] = 'Bearer $token';
+          }
+          handler.next(options);
+        },
+      ),
+    );
   }
 
   // -----------------------------
@@ -36,10 +40,12 @@ class Api {
     required FlutterSecureStorage store,
   })  : _dio = dio,
         _store = store;
-  
 
   // ===== Helpers for auth body  =========================================
 
+  /// For legacy routes that still expect userId/accessToken in the body.
+  /// Many routes now just use authMiddleware + Authorization header,
+  /// but this helper is still safe to use (extra fields are ignored by Node).
   Future<Map<String, dynamic>> _buildAuthBody(
       [Map<String, dynamic>? extra]) async {
     final accessToken = await _store.read(key: 'accessToken');
@@ -56,25 +62,127 @@ class Api {
     };
   }
 
-  // ===== Reminders =======================================================
+  // ======================================================================
+  //                            AUTH & USER
+  // ======================================================================
 
-  /// Create a reminder (backend: POST /api/createReminder)
+  /// Signup -> /api/addUser
+  ///
+  /// Backend expects: { name, email, password }
+  /// We concatenate first + last into "name".
+  Future<Map<String, dynamic>> signup({
+    required String firstName,
+    required String lastName,
+    required String email,
+    required String password,
+  }) async {
+    final name = (firstName.trim() + ' ' + lastName.trim()).trim();
+
+    final res = await _dio.post('/api/addUser', data: {
+      'name': name,
+      'email': email,
+      'password': password,
+    });
+
+    final map = Map<String, dynamic>.from(res.data);
+
+    if (map['accessToken'] != null) {
+      await _store.write(key: 'accessToken', value: map['accessToken']);
+      await _store.write(key: 'userId', value: map['id'].toString());
+    }
+
+    return map; // { id, firstName, lastName, accessToken, verificationToken, error }
+  }
+
+  /// Login -> /api/loginUser
+  ///
+  /// Returns id, firstName, lastName, accessToken, maybe verificationToken, error
+  Future<Map<String, dynamic>> login({
+    required String email,
+    required String password,
+  }) async {
+    final res = await _dio.post('/api/loginUser', data: {
+      'email': email,
+      'password': password,
+    });
+
+    final map = Map<String, dynamic>.from(res.data);
+
+    if (map['accessToken'] != null) {
+      await _store.write(key: 'accessToken', value: map['accessToken']);
+      await _store.write(key: 'userId', value: map['id'].toString());
+      if (map['verificationToken'] != null) {
+        await _store.write(
+          key: 'verificationToken',
+          value: map['verificationToken'].toString(),
+        );
+      }
+    }
+
+    return map;
+  }
+
+  /// Verify user email -> /api/verifyUser (authMiddleware)
+  ///
+  /// Backend body: { email, verificationToken }
+  /// Response: { id, error }
+  Future<Map<String, dynamic>> verifyUser({
+    required String email,
+    required String verificationToken,
+  }) async {
+    final res = await _dio.post('/api/verifyUser', data: {
+      'email': email,
+      // Backend stores it as a number; we parse to int here.
+      'verificationToken': int.parse(verificationToken),
+    });
+
+    return Map<String, dynamic>.from(res.data);
+  }
+
+  /// Simple logout helper for frontend -> /api/logout
+  ///
+  /// Backend just returns { error: '', jwtToken: '' }.
+  Future<Map<String, dynamic>> logout() async {
+    final res = await _dio.post('/api/logout');
+    final map = Map<String, dynamic>.from(res.data);
+
+    // Clear stored token regardless
+    await _store.delete(key: 'accessToken');
+    await _store.delete(key: 'userId');
+    await _store.delete(key: 'verificationToken');
+
+    return map;
+  }
+
+  // ======================================================================
+  //                            REMINDERS
+  // ======================================================================
+
+  /// Create a reminder -> /api/createReminder
+  ///
+  /// Backend currently only uses "title" (desc/status/priority/dueDate are
+  /// handled in editReminder). Extra fields are harmless.
   Future<Map<String, dynamic>> createReminder({
     required String title,
-    required String desc,
-    required String status,
-    required String priority,
-    required DateTime dueDate,
+    String? desc,
+    String? status,
+    String? priority,
+    DateTime? dueDate,
   }) async {
-    final body = await _buildAuthBody({
+    final extra = <String, dynamic>{
       'title': title,
-      'desc': desc,
-      'status': status,
-      'priority': priority,
-      'year': dueDate.year,
-      'month': dueDate.month,
-      'day': dueDate.day,
-    });
+    };
+
+    if (desc != null) extra['desc'] = desc;
+    if (status != null) extra['status'] = status;
+    if (priority != null) extra['priority'] = priority;
+    if (dueDate != null) {
+      extra['year'] = dueDate.year;
+      extra['month'] = dueDate.month;
+      extra['day'] = dueDate.day;
+    }
+
+    final body = await _buildAuthBody(extra);
 
     try {
       final res = await _dio.post('/api/createReminder', data: body);
@@ -90,11 +198,20 @@ class Api {
     }
   }
 
-  /// View all reminders (backend: POST /api/viewReminder)
-  Future<Map<String, dynamic>> viewReminders({String? reminderId}) async {
-    final body = await _buildAuthBody(
-      reminderId != null ? {'reminderId': reminderId} : null,
-    );
+  /// View reminders -> /api/viewReminder
+  ///
+  /// Backend body: optional { title } to fetch a single reminder,
+  /// or nothing to fetch all.
+  ///
+  /// Returns either:
+  ///  { success, reminder, error } OR { success, reminders, error }
+  Future<Map<String, dynamic>> viewReminders({String? title}) async {
+    final extra = <String, dynamic>{};
+    if (title != null) {
+      extra['title'] = title;
+    }
+
+    final body = await _buildAuthBody(extra.isEmpty ? null : extra);
 
     try {
       final res = await _dio.post('/api/viewReminder', data: body);
@@ -110,7 +227,9 @@ class Api {
     }
   }
 
-  /// Mark a reminder as completed (backend: POST /api/completeReminder)
+  /// Mark a reminder completed -> /api/completeReminder
+  ///
+  /// Backend identifies reminders by (userId, title).
   Future<Map<String, dynamic>> completeReminder({
     required String title,
   }) async {
@@ -132,7 +251,9 @@ class Api {
     }
   }
 
-  /// Delete a reminder (backend: POST /api/deleteReminder)
+  /// Delete reminder -> /api/deleteReminder
+  ///
+  /// Backend deletes by (userId, title).
   Future<Map<String, dynamic>> deleteReminder({
     required String title,
   }) async {
@@ -154,23 +275,30 @@ class Api {
     }
   }
 
-  /// Edit a reminder (backend: POST /api/editReminder)
+  /// Edit reminder -> /api/editReminder
+  ///
+  /// Backend finds reminder by (userId, title) then updates fields.
   Future<Map<String, dynamic>> editReminder({
     required String title,
-    required String desc,
-    required String status,
-    required String priority,
-    required DateTime dueDate,
+    String? desc,
+    String? status,
+    String? priority,
+    DateTime? dueDate,
   }) async {
-    final body = await _buildAuthBody({
+    final extra = <String, dynamic>{
       'title': title,
-      'desc': desc,
-      'status': status,
-      'priority': priority,
-      'year': dueDate.year,
-      'month': dueDate.month,
-      'day': dueDate.day,
-    });
+    };
+
+    if (desc != null) extra['desc'] = desc;
+    if (status != null) extra['status'] = status;
+    if (priority != null) extra['priority'] = priority;
+    if (dueDate != null) {
+      extra['year'] = dueDate.year;
+      extra['month'] = dueDate.month;
+      extra['day'] = dueDate.day;
+    }
+
+    final body = await _buildAuthBody(extra);
 
     try {
       final res = await _dio.post('/api/editReminder', data: body);
@@ -186,96 +314,36 @@ class Api {
     }
   }
 
-  // ---- Auth & User ----
+  // ======================================================================
+  //                               TASKS
+  // ======================================================================
 
-  Future<Map<String, dynamic>> signup({
-    required String firstName,
-    required String lastName,
-    required String email,
-    required String password,
-  }) async {
-    final res = await _dio.post('/api/addUser', data: {
-      'firstName': firstName,
-      'lastName': lastName,
-      'email': email,
-      'password': password,
-    });
-    final map = Map<String, dynamic>.from(res.data);
-    // server returns id, firstName, lastName, accessToken, error
-    if (map['accessToken'] != null) {
-      await _store.write(key: 'accessToken', value: map['accessToken']);
-      await _store.write(key: 'userId', value: map['id'].toString());
-    }
-    return map;
-  }
-
-  Future<Map<String, dynamic>> login({
-    required String email,
-    required String password,
-  }) async {
-    final res = await _dio.post('/api/loginUser', data: {
-      'email': email,
-      'password': password,
-    });
-    final map = Map<String, dynamic>.from(res.data);
-    // returns id, firstName, lastName, accessToken, verificationToken, error
-    if (map['accessToken'] != null) {
-      await _store.write(key: 'accessToken', value: map['accessToken']);
-      await _store.write(key: 'userId', value: map['id'].toString());
-      if (map['verificationToken'] != null) {
-        await _store.write(key: 'verificationToken', value: map['verificationToken'].toString());
-      }
-    }
-    return map;
-  }
-
-  /// Verify a user's email using the provided verification token.
+  /// Create task -> /api/createTask
   ///
-  /// Note: verificationToken is sent as a String to preserve leading zeros. Passing an int
-  /// would drop leading zeros and cause valid codes like "012345" to fail.
-  Future<Map<String, dynamic>> verifyUser({
-    required String email,
-    required String verificationToken,
-  }) async {
-    final accessToken = await _store.read(key: 'accessToken');
-    final res = await _dio.post('/api/verifyUser', data: {
-      'email': email,
-      'verificationToken': int.parse(verificationToken),
-      'accessToken': accessToken,
-    });
-    final map = Map<String, dynamic>.from(res.data);
-    return map; // { id, accessToken, error: 'success, send to Dashboard page' } on success
-  }
-
-  // ===== Tasks ==========================================================
-
-  /// Create a task (backend: POST /api/createTask)
-  ///
-  /// Server defaults:
-  /// - description -> '' if omitted
-  /// - status -> 'not started' if omitted
-  /// - priority -> 'medium' if omitted
-  /// - dueDate -> null if omitted
-  /// - completed -> {isCompleted:false, completedAt:null} if omitted
+  /// Backend expects: { title, dueDate, tag, priority }
+  ///   - dueDate: string or null; backend does new Date(dueDate)
   Future<Map<String, dynamic>> createTask({
     required String title,
-    String? description,
-    String? status,
+    String? description, // stored only via editTask
+    String? status, // stored only via editTask
     String? priority,
+    String? tag,
     DateTime? dueDate,
-    bool? isCompleted,
-    DateTime? completedAt,
+    bool? isCompleted, // stored only via editTask
+    DateTime? completedAt, // stored only via editTask
   }) async {
     final extra = <String, dynamic>{
       'title': title,
     };
 
-    if (description != null) extra['description'] = description;
-    if (status != null) extra['status'] = status;
     if (priority != null) extra['priority'] = priority;
+    if (tag != null) extra['tag'] = tag;
     if (dueDate != null) extra['dueDate'] = dueDate.toIso8601String();
 
-    // Only send "completed" if caller provides something
+    // description/status/completed are used in editTask; including them
+    // here is harmless but not necessary.
+    if (description != null) extra['description'] = description;
+    if (status != null) extra['status'] = status;
     if (isCompleted != null || completedAt != null) {
       extra['completed'] = {
         'isCompleted': isCompleted ?? false,
@@ -299,14 +367,21 @@ class Api {
     }
   }
 
-  /// View tasks (backend: POST /api/viewTask)
+  /// View tasks -> /api/viewTask
   ///
-  /// - If [taskId] is provided: returns a single task.
-  /// - If [taskId] is null: returns all tasks for the user.
-  Future<Map<String, dynamic>> viewTasks({String? taskId}) async {
-    final body = await _buildAuthBody(
-      taskId != null ? {'taskId': taskId} : null,
-    );
+  /// Backend body: optional { title } to fetch a specific task,
+  /// or nothing to fetch all for the user.
+  ///
+  /// Returns:
+  ///  - { success, task, error }  OR
+  ///  - { success, tasks, error }
+  Future<Map<String, dynamic>> viewTasks({String? title}) async {
+    final extra = <String, dynamic>{};
+    if (title != null) {
+      extra['title'] = title;
+    }
+
+    final body = await _buildAuthBody(extra.isEmpty ? null : extra);
 
     try {
       final res = await _dio.post('/api/viewTask', data: body);
@@ -322,10 +397,9 @@ class Api {
     }
   }
 
-  /// Edit a task (backend: POST /api/editTask)
+  /// Edit task -> /api/editTask
   ///
-  /// All fields except [taskId] are optional; only non-null fields are sent
-  /// and will be updated on the server.
+  /// Backend edits by taskId (ObjectId), and userId from authMiddleware.
   Future<Map<String, dynamic>> editTask({
     required String taskId,
     String? title,
@@ -345,7 +419,6 @@ class Api {
     if (status != null) extra['status'] = status;
     if (priority != null) extra['priority'] = priority;
     if (dueDate != null) extra['dueDate'] = dueDate.toIso8601String();
-
     if (isCompleted != null || completedAt != null) {
       extra['completed'] = {
         'isCompleted': isCompleted ?? false,
@@ -369,12 +442,16 @@ class Api {
     }
   }
 
+  /// Delete task -> /api/deleteTask
+  ///
   /// Delete a task (backend: POST /api/deleteTask)
+  ///
+  /// Backend expects { title }.
   Future<Map<String, dynamic>> deleteTask({
-    required String taskId,
+    required String title,
   }) async {
     final body = await _buildAuthBody({
-      'taskId': taskId,
+      'title': title,
     });
 
     try {
@@ -391,34 +468,27 @@ class Api {
     }
   }
 
-  // ===== Calendar Events ===============================================
 
-  /// Create a calendar event (backend: POST /api/createCalendarEvent)
+  // ======================================================================
+  //                          CALENDAR EVENTS
+  // ======================================================================
+
+  /// Create calendar event -> /api/createCalendarEvent
   ///
-  /// Server expects:
-  ///   title, description, location, startDate, endDate, color, allDay, reminder
-  /// and will default color/allDay/reminder to {} if omitted.
+  /// Backend expects: { title, description, endDate }
+  ///   - startDate is set to new Date() server-side.
+  /// Extra fields are safe but currently ignored.
   Future<Map<String, dynamic>> createCalendarEvent({
     required String title,
     String? description,
-    String? location,
-    DateTime? startDate,
     DateTime? endDate,
-    Map<String, dynamic>? color,
-    Map<String, dynamic>? allDay,
-    Map<String, dynamic>? reminder,
   }) async {
     final extra = <String, dynamic>{
       'title': title,
     };
 
     if (description != null) extra['description'] = description;
-    if (location != null) extra['location'] = location;
-    if (startDate != null) extra['startDate'] = startDate.toIso8601String();
     if (endDate != null) extra['endDate'] = endDate.toIso8601String();
-    if (color != null) extra['color'] = color;
-    if (allDay != null) extra['allDay'] = allDay;
-    if (reminder != null) extra['reminder'] = reminder;
 
     final body = await _buildAuthBody(extra);
 
@@ -436,14 +506,20 @@ class Api {
     }
   }
 
-  /// View calendar events (backend: POST /api/viewCalendarEvent)
+  /// View calendar events -> /api/viewCalendarEvent
   ///
-  /// - If [eventId] is provided: returns a single event (`event` field).
-  /// - If [eventId] is null: returns all events (`events` field).
-  Future<Map<String, dynamic>> viewCalendarEvents({String? eventId}) async {
-    final body = await _buildAuthBody(
-      eventId != null ? {'eventId': eventId} : null,
-    );
+  /// Backend body: optional { title } to get a single event,
+  /// or nothing to get all events for the user.
+  ///
+  /// Returns:
+  ///  - { success, event, error } OR { success, events, error }
+  Future<Map<String, dynamic>> viewCalendarEvents({String? title}) async {
+    final extra = <String, dynamic>{};
+    if (title != null) {
+      extra['title'] = title;
+    }
+
+    final body = await _buildAuthBody(extra.isEmpty ? null : extra);
 
     try {
       final res = await _dio.post('/api/viewCalendarEvent', data: body);
@@ -459,9 +535,9 @@ class Api {
     }
   }
 
-  /// Edit a calendar event (backend: POST /api/editCalendarEvent)
+  /// Edit calendar event -> /api/editCalendarEvent
   ///
-  /// Only non-null fields are sent and updated server-side.
+  /// Backend edits by eventId (ObjectId) + userId.
   Future<Map<String, dynamic>> editCalendarEvent({
     required String eventId,
     String? title,
@@ -502,12 +578,21 @@ class Api {
     }
   }
 
-  /// Delete a calendar event (backend: POST /api/deleteCalendarEvent)
+  /// Delete calendar event -> /api/deleteCalendarEvent
+  ///
+  /// Backend deletes by (userId, title), **not** eventId.
   Future<Map<String, dynamic>> deleteCalendarEvent({
-    required String eventId,
+    String? eventId, // legacy, unused by backend
+    String? title,
   }) async {
+    if (title == null || title.isEmpty) {
+      throw Exception(
+        'deleteCalendarEvent now deletes by title. Please provide the event title.',
+      );
+    }
+
     final body = await _buildAuthBody({
-      'eventId': eventId,
+      'title': title,
     });
 
     try {
@@ -524,9 +609,10 @@ class Api {
     }
   }
 
-  // ---- NASA APOD ----
+  // ======================================================================
+  //                              NASA APOD
+  // ======================================================================
 
-  /// Format a DateTime as YYYY-MM-DD to match how APOD dates are stored
   String _formatApodDate(DateTime date) {
     final y = date.year.toString().padLeft(4, '0');
     final m = date.month.toString().padLeft(2, '0');
@@ -534,36 +620,18 @@ class Api {
     return '$y-$m-$d';
   }
 
-  /// Fetch APOD info for a given date from the backend.
-  /// Backend route: POST /api/viewAPOD
+  /// View APOD for a specific date -> /api/viewAPOD (authMiddleware)
   ///
-  /// Returns a map like:
-  /// {
-  ///   success: true/false,
-  ///   title: ...,
-  ///   hdurl: ...,
-  ///   explanation: ...,
-  ///   thumbnailUrl: ...,
-  ///   copyright: ...,
-  ///   error: '',
-  ///   accessToken: '...'
-  /// }
+  /// Backend body: { date: "YYYY-MM-DD" }
   Future<Map<String, dynamic>> viewApod({
     required DateTime date,
   }) async {
-    // Read the JWT we stored during login/verify
-    final accessToken = await _store.read(key: 'accessToken');
-    if (accessToken == null) {
-      throw Exception('No access token found. User may not be logged in.');
-    }
-
     final dateStr = _formatApodDate(date);
 
     try {
       final response = await _dio.post(
         '/api/viewAPOD',
         data: {
-          'accessToken': accessToken,
           'date': dateStr,
         },
       );
@@ -571,12 +639,10 @@ class Api {
       return Map<String, dynamic>.from(response.data);
     } on DioException catch (e) {
       if (e.response != null) {
-        // Server responded with an error status
         throw Exception(
           'Server error: ${e.response?.statusCode} ${e.response?.data}',
         );
       } else {
-        // Network / timeout
         throw Exception('Network error: ${e.message}');
       }
     } catch (e) {
@@ -584,30 +650,8 @@ class Api {
     }
   }
 
-  // ---- NASA APOD: Recent photos ----
-
-  /// Fetch the most recent APOD entries from the backend.
-  ///
-  /// Backend route: POST /api/recentAPODs
-  /// Body: { accessToken, limit }
-  ///
-  /// Expected response:
-  /// {
-  ///   success: true,
-  ///   photos: [
-  ///     {
-  ///       "date": "2025-11-16",
-  ///       "title": "...",
-  ///       "thumbnailUrl": "...",
-  ///       "hdurl": "...",
-  ///       "explanation": "...",
-  ///       "copyright": "..."
-  ///     },
-  ///     ...
-  ///   ],
-  ///   error: "",
-  ///   accessToken: "..."
-  /// }
+  /// NOTE: /api/recentAPODs is commented out in api.js right now.
+  /// This will fail if called until that route is re-enabled.
   Future<List<Map<String, dynamic>>> fetchRecentApods({
     int limit = 6,
   }) async {
@@ -653,35 +697,24 @@ class Api {
     }
   }
 
-  // ===== Weather =======================================================
+  // ======================================================================
+  //                               WEATHER
+  // ======================================================================
 
-  /// Fetch current weather info from the backend.
+  /// View current weather -> /api/viewWeather (authMiddleware)
   ///
-  /// Backend route: POST /api/viewWeather
-  ///
-  /// Expected response:
+  /// Returns on success:
   /// {
   ///   success: true,
   ///   weather: {
-  ///     location: "Orlando, FL",
-  ///     high: ...,
-  ///     low: ...,
-  ///     sunrise: ...,
-  ///     sunset: ...,
-  ///     forecast: ...,
-  ///     humid: ...,
-  ///     vis: ...,
-  ///     pressure: ...,
-  ///     windSpeed: ...,
-  ///     lastUpdated: ...
+  ///     location, high, low, sunrise, sunset,
+  ///     forecast, humid, vis, pressure, windSpeed, lastUpdated
   ///   },
-  ///   error: "",
-  ///   accessToken: "..."
+  ///   error: ''
   /// }
   Future<Map<String, dynamic>> viewWeather() async {
     try {
-      // No body needed – authMiddleware uses Authorization header,
-      // which your interceptor already sets.
+      // authMiddleware uses Authorization header; no body needed
       final response = await _dio.post('/api/viewWeather');
 
       final map = Map<String, dynamic>.from(response.data);
@@ -691,20 +724,11 @@ class Api {
         throw Exception(err.toString());
       }
 
-      // If backend sends a refreshed token, store it
-      if (map['accessToken'] != null) {
-        await _store.write(
-          key: 'accessToken',
-          value: map['accessToken'].toString(),
-        );
-      }
-
       final weatherRaw = map['weather'];
       if (weatherRaw == null) {
         throw Exception('Weather data missing from response.');
       }
 
-      // Just return the weather map itself
       return Map<String, dynamic>.from(weatherRaw as Map);
     } on DioException catch (e) {
       if (e.response != null) {
@@ -719,15 +743,13 @@ class Api {
     }
   }
 
+  // ======================================================================
+  //                          UCF GARAGES / PARKING
+  // ======================================================================
 
-    // ===== UCF Garages / Parking =========================================
-
-  /// Fetch all garages from the backend.
+  /// View garages -> /api/viewGarages (authMiddleware)
   ///
-  /// Backend route: POST /api/viewGarages
-  /// Body: { userId, accessToken }
-  ///
-  /// Expected response:
+  /// Backend returns:
   /// {
   ///   success: true,
   ///   garages: [
@@ -736,34 +758,22 @@ class Api {
   ///       "availableSpots": 250,
   ///       "totalSpots": 1000,
   ///       "percentFull": 75,
-  ///       "lastUpdated": "2025-11-18T03:12:45.123Z",
-  ///       "updatedAt": "...",
-  ///       "createdAt": "..."
+  ///       "lastUpdated": "...",
+  ///       ...
   ///     },
   ///     ...
   ///   ],
-  ///   error: "",
-  ///   accessToken: "..."
+  ///   error: ''
   /// }
   Future<List<Map<String, dynamic>>> viewGarages() async {
-    // Reuse the same auth body helper (userId + accessToken)
-    final body = await _buildAuthBody();
-
+    // No body required; auth via header only.
     try {
-      final res = await _dio.post('/api/viewGarages', data: body);
+      final res = await _dio.post('/api/viewGarages');
       final map = Map<String, dynamic>.from(res.data);
 
       if (map['success'] != true) {
         final err = map['error'] ?? 'Failed to fetch garage data.';
         throw Exception(err.toString());
-      }
-
-      // If the backend refreshed the token, persist it
-      if (map['accessToken'] != null) {
-        await _store.write(
-          key: 'accessToken',
-          value: map['accessToken'].toString(),
-        );
       }
 
       final raw = map['garages'] ?? [];
@@ -786,5 +796,4 @@ class Api {
       throw Exception('Unexpected error: $e');
     }
   }
-
 }

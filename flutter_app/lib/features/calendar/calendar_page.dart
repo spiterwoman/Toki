@@ -136,24 +136,12 @@ class _CalendarPageState extends State<CalendarPage> {
       _error = null;
     });
 
-    final isAllDay = ev.time == null || ev.time!.isEmpty;
-
     try {
       await api.createCalendarEvent(
         title: ev.title,
         description: ev.description,
-        location: ev.location,
-        startDate: ev.date,
+        // backend only needs endDate; it sets startDate = now
         endDate: ev.endDate ?? ev.date,
-        color: {
-          'value': _hexFromTheme(ev.theme),
-        },
-        allDay: {
-          'isAllDay': isAllDay,
-        },
-        reminder: {
-          'minutesBefore': 30, // default reminder
-        },
       );
 
       await _loadEventsFromServer();
@@ -165,6 +153,7 @@ class _CalendarPageState extends State<CalendarPage> {
     }
   }
 
+
   Future<void> _removeEvent(String id) async {
     setState(() {
       _loading = true;
@@ -172,7 +161,12 @@ class _CalendarPageState extends State<CalendarPage> {
     });
 
     try {
-      await api.deleteCalendarEvent(eventId: id);
+      // find the event in your local list
+      final ev = _events.firstWhere((e) => e.id == id);
+
+      // backend deletes by title
+      await api.deleteCalendarEvent(title: ev.title);
+
       await _loadEventsFromServer();
     } catch (e) {
       setState(() {
@@ -181,6 +175,7 @@ class _CalendarPageState extends State<CalendarPage> {
       });
     }
   }
+
 
   Future<void> _openAddEventDialog() async {
     final newEvent = await showDialog<_UiEvent>(
