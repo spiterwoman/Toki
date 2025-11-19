@@ -41,11 +41,7 @@ export default function VerificationPage() {
       const res = await fetch('/api/verifyUser', {
         method: 'POST',
         headers: {'Content-Type': 'application/json'},
-        body: JSON.stringify({
-          email,
-          verificationToken: otp,
-          accessToken: localStorage.getItem('token'),
-        }),
+        body: JSON.stringify({ verificationToken: otp }),
       });
 
       const data = await res.json();
