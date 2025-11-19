@@ -4,6 +4,7 @@ const path = require('path');
 const { MongoClient } = require('mongodb');
 require('dotenv').config({ path: './priv.env' }); // your .env file
 require('dotenv').config({ path: './sendgrid.env' });
+const { startWeatherUpdateScheduler } = require('./services/weatherService');
 
 
 const app = express();
@@ -47,9 +48,15 @@ async function connectDB() {
         const api = require('./api.js');
         api.setApp(app, client);
 
+        // Weather API
+        console.log('🌤️  Starting weather update scheduler...');
+        startWeatherUpdateScheduler();
+
         // Start server
-        app.listen(5000, () => {
-            console.log('Server is running on port 5000');
+        const PORT = process.env.PORT || 5000;
+
+        app.listen(PORT, () => {
+            console.log(`Server is running on port ${PORT}`);
         });
     } catch (err) {
         console.error('MongoDB connection failed:', err);
