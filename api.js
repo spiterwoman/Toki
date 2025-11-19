@@ -1032,9 +1032,8 @@ async function updateGarages() {
     }
   }
 }
-
 updateGarages();
-setInterval(updateGarages, 2 * 60 * 1000); //*/
+setInterval(updateGarages, 2 * 60 * 1000);
 
 
 app.post('/api/viewAPOD', async(req,res)=>{
@@ -1089,7 +1088,7 @@ app.post('/api/viewAPOD', async(req,res)=>{
 		  console.log(e.message);
 	  } 
 	  res.status(200).json(ret);
-  });
+});
 
 async function updateAPOD() {
   try {
@@ -1125,7 +1124,6 @@ async function updateAPOD() {
     console.error('Error fetching NASA images:', error);
   }
 }
-
 updateAPOD();
 setInterval(updateAPOD, 24 * 60 * 1000); 
 
@@ -1187,6 +1185,125 @@ app.post('/api/recentAPODs', async (req, res) => {
 
   res.status(200).json(ret);
 });
+
+
+
+
+
+// ============= WEATHER ROUTES =============
+
+  // Get weather for specific user
+  app.post('/api/viewWeather', async(req, res) => {
+    const { userId, accessToken } = req.body;
+    let ret = {};
+
+    // Validate JWT
+    try {
+      if (token.isExpired(accessToken)) {
+        return res.status(200).json({
+          error: 'The JWT is no longer valid',
+          accessToken: ''
+        });
+      }
+    } catch (e) {
+      console.log(e.message);
+    }
+
+    try {
+      const db = client.db('tokidatabase');
+      const weatherCollection = db.collection('weathers');
+
+      const weather = await weatherCollection.findOne({
+        userId: new ObjectId(userId)
+      });
+
+      if (!weather) {
+        return res.status(200).json({
+          success: false,
+          error: 'No weather data found for this user',
+          accessToken
+        });
+      }
+
+      ret = {
+        success: true,
+        weather: {
+          location: weather.location,
+          high: weather.high,
+          low: weather.low,
+          sunrise: weather.sunrise,
+          sunset: weather.sunset,
+          forecast: weather.forecast,
+          humid: weather.humid,
+          vis: weather.vis,
+          pressure: weather.pressure,
+          windSpeed: weather.windSpeed,
+          lastUpdated: weather.lastUpdated
+        },
+        error: '',
+        accessToken
+      };
+
+    } catch (e) {
+      ret = { success: false, error: e.toString() };
+    }
+
+    // Refresh JWT
+    let refreshedToken = null;
+    try {
+      refreshedToken = token.refresh(accessToken);
+    } catch (e) {
+      console.log(e.message);
+    }
+
+    res.status(200).json(ret);
+  });
+
+  // Get all weather data (for admin/debugging)
+  app.post('/api/viewAllWeather', async(req, res) => {
+    const { accessToken } = req.body;
+    let ret = {};
+
+    // Validate JWT
+    try {
+      if (token.isExpired(accessToken)) {
+        return res.status(200).json({
+          error: 'The JWT is no longer valid',
+          accessToken: ''
+        });
+      }
+    } catch (e) {
+      console.log(e.message);
+    }
+
+    try {
+      const db = client.db('tokidatabase');
+      const weatherCollection = db.collection('weathers');
+
+      const allWeather = await weatherCollection.find({}).toArray();
+
+      ret = {
+        success: true,
+        weather: allWeather,
+        count: allWeather.length,
+        error: '',
+        accessToken
+      };
+
+    } catch (e) {
+      ret = { success: false, error: e.toString() };
+    }
+
+    // Refresh JWT
+    let refreshedToken = null;
+    try {
+      refreshedToken = token.refresh(accessToken);
+    } catch (e) {
+      console.log(e.message);
+    }
+
+    res.status(200).json(ret);
+  });
 }
   
 
@@ -1223,7 +1340,6 @@ function sendTempPassEmail(email, tempPassword)
     .then(() => {console.log('Email sent')})
     .catch((error) => {console.error(error)});
 }
-
 
 function generateRandomPassword(length = 12) 
 {
