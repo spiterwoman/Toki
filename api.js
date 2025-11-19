@@ -1123,8 +1123,7 @@ app.post('/api/recentAPODs', async (req, res) => {
           windSpeed: weather.windSpeed,
           lastUpdated: weather.lastUpdated
         },
-        error: '',
-        accessToken
+        error: ''
       };
 
     } catch (e) {

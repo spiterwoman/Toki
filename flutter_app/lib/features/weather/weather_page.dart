@@ -2,46 +2,164 @@ import 'package:flutter/material.dart';
 
 import '../../core/widgets/page_shell.dart';
 import '../../core/widgets/glass_card.dart';
+import '../../core/api/api.dart';
 
-class WeatherPage extends StatelessWidget {
+// You can also inject this instead of using a global if you prefer
+final api = Api('https://mytoki.app');
+
+// === backend weather model =============================================
+
+class Weather {
+  final String location;
+  final int high;
+  final int low;
+  final String sunrise;
+  final String sunset;
+  final int humid;
+  final int vis;
+  final int pressure;
+  final int windSpeed;
+  final String forecast;
+  final String emoji;
+
+  Weather({
+    required this.location,
+    required this.high,
+    required this.low,
+    required this.sunrise,
+    required this.sunset,
+    required this.humid,
+    required this.vis,
+    required this.pressure,
+    required this.windSpeed,
+    required this.forecast,
+    required this.emoji,
+  });
+
+  factory Weather.fromJson(Map<String, dynamic> json) {
+    return Weather(
+      location: json['location'] as String? ?? '',
+      high: json['high'] as int? ?? 0,
+      low: json['low'] as int? ?? 0,
+      sunrise: json['sunrise']?.toString() ?? '',
+      sunset: json['sunset']?.toString() ?? '',
+      humid: json['humid'] as int? ?? 0,
+      vis: json['vis'] as int? ?? 0,
+      pressure: json['pressure'] as int? ?? 0,
+      windSpeed: json['windSpeed'] as int? ?? 0,
+      forecast: json['forecast']?.toString() ?? '',
+      emoji: _forecastToEmoji(json['forecast']?.toString() ?? ''),
+    );
+  }
+}
+
+String _forecastToEmoji(String forecast) {
+  final f = forecast.toLowerCase();
+  if (f.contains('storm') || f.contains('thunder')) return '⛈️';
+  if (f.contains('rain') || f.contains('shower')) return '🌧️';
+  if (f.contains('snow')) return '❄️';
+  if (f.contains('cloud')) return '⛅';
+  if (f.contains('sun') || f.contains('clear')) return '☀️';
+  return '☁️';
+}
+
+// === page ==============================================================
+
+class WeatherPage extends StatefulWidget {
   const WeatherPage({super.key});
 
   @override
+  State<WeatherPage> createState() => _WeatherPageState();
+}
+
+class _WeatherPageState extends State<WeatherPage> {
+  Weather? _weather;
+  bool _loading = true;
+  String? _error;
+
+  @override
+  void initState() {
+    super.initState();
+    _loadWeather();
+  }
+
+  Future<void> _loadWeather() async {
+    setState(() {
+      _loading = true;
+      _error = null;
+    });
+
+    try {
+      // api.viewWeather() returns the `weather` map from the backend
+      final map = await api.viewWeather();
+      _weather = Weather.fromJson(map);
+    } catch (e) {
+      _error = 'Failed to load weather: $e';
+    }
+
+    if (mounted) {
+      setState(() {
+        _loading = false;
+      });
+    }
+  }
+
+  @override
   Widget build(BuildContext context) {
-    const current = _CurrentWeather(
-      emoji: '☀️',
-      condition: 'Sunny',
-      temperature: 75,
-      feelsLike: 73,
-      humidity: 45,
-      windSpeed: 8,
-      visibility: 10,
-      pressure: 1013,
-      sunrise: '7:12 AM',
-      sunset: '7:45 PM',
+    if (_loading) {
+      return const PageShell(
+        title: 'Weather',
+        subtitle: 'Loading…',
+        child: Center(child: CircularProgressIndicator()),
+      );
+    }
+
+    if (_error != null || _weather == null) {
+      return PageShell(
+        title: 'Weather',
+        subtitle: 'Error',
+        child: Center(
+          child: Padding(
+            padding: const EdgeInsets.all(24.0),
+            child: Text(
+              _error ?? 'Unknown error loading weather.',
+              style: const TextStyle(color: Colors.redAccent),
+              textAlign: TextAlign.center,
+            ),
+          ),
+        ),
+      );
+    }
+
+    final w = _weather!;
+
+    // Map backend Weather -> your existing UI model
+    final current = _CurrentWeather(
+      emoji: w.emoji,
+      condition: w.forecast,
+      temperature: w.high, // you can change to "currentTemp" if you add it later
+      feelsLike: w.high,
+      humidity: w.humid,
+      windSpeed: w.windSpeed,
+      visibility: w.vis,
+      pressure: w.pressure,
+      sunrise: w.sunrise,
+      sunset: w.sunset,
     );
 
-    const hourly = <_HourlyWeather>[
-      _HourlyWeather(time: '9 AM', temp: 72, emoji: '☀️'),
-      _HourlyWeather(time: '12 PM', temp: 78, emoji: '☀️'),
-      _HourlyWeather(time: '3 PM', temp: 82, emoji: '🌤️'),
-      _HourlyWeather(time: '6 PM', temp: 76, emoji: '🌤️'),
-      _HourlyWeather(time: '9 PM', temp: 70, emoji: '🌙'),
+    // Until the backend supports real hourly/weekly, we derive quick placeholders
+    final hourly = <_HourlyWeather>[
+      _HourlyWeather(time: 'Now', temp: w.high, emoji: w.emoji),
+      _HourlyWeather(time: 'Later', temp: w.low, emoji: w.emoji),
     ];
 
-    const weekly = <_DailyWeather>[
-      _DailyWeather(day: 'Mon', high: 82, low: 68, emoji: '☀️'),
-      _DailyWeather(day: 'Tue', high: 79, low: 66, emoji: '⛅'),
-      _DailyWeather(day: 'Wed', high: 75, low: 64, emoji: '🌧️'),
-      _DailyWeather(day: 'Thu', high: 73, low: 62, emoji: '🌧️'),
-      _DailyWeather(day: 'Fri', high: 76, low: 65, emoji: '⛅'),
-      _DailyWeather(day: 'Sat', high: 80, low: 67, emoji: '☀️'),
-      _DailyWeather(day: 'Sun', high: 83, low: 69, emoji: '☀️'),
+    final weekly = <_DailyWeather>[
+      _DailyWeather(day: 'Today', high: w.high, low: w.low, emoji: w.emoji),
     ];
 
     return PageShell(
       title: 'Weather',
-      subtitle: 'Orlando, Florida',
+      subtitle: w.location.isNotEmpty ? w.location : 'Orlando, Florida',
       child: SingleChildScrollView(
         padding: const EdgeInsets.fromLTRB(24, 24, 24, 24),
         child: Column(
@@ -133,11 +251,13 @@ class WeatherPage extends StatelessWidget {
                     const SizedBox(height: 16),
                     Column(
                       children: weekly
-                          .map((d) => Padding(
-                                padding:
-                                    const EdgeInsets.symmetric(vertical: 6.0),
-                                child: _DailyRow(day: d),
-                              ))
+                          .map(
+                            (d) => Padding(
+                              padding:
+                                  const EdgeInsets.symmetric(vertical: 6.0),
+                              child: _DailyRow(day: d),
+                            ),
+                          )
                           .toList(),
                     ),
                   ],

@@ -653,6 +653,73 @@ class Api {
     }
   }
 
+  // ===== Weather =======================================================
+
+  /// Fetch current weather info from the backend.
+  ///
+  /// Backend route: POST /api/viewWeather
+  ///
+  /// Expected response:
+  /// {
+  ///   success: true,
+  ///   weather: {
+  ///     location: "Orlando, FL",
+  ///     high: ...,
+  ///     low: ...,
+  ///     sunrise: ...,
+  ///     sunset: ...,
+  ///     forecast: ...,
+  ///     humid: ...,
+  ///     vis: ...,
+  ///     pressure: ...,
+  ///     windSpeed: ...,
+  ///     lastUpdated: ...
+  ///   },
+  ///   error: "",
+  ///   accessToken: "..."
+  /// }
+  Future<Map<String, dynamic>> viewWeather() async {
+    try {
+      // No body needed – authMiddleware uses Authorization header,
+      // which your interceptor already sets.
+      final response = await _dio.post('/api/viewWeather');
+
+      final map = Map<String, dynamic>.from(response.data);
+
+      if (map['success'] != true) {
+        final err = map['error'] ?? 'Failed to fetch weather.';
+        throw Exception(err.toString());
+      }
+
+      // If backend sends a refreshed token, store it
+      if (map['accessToken'] != null) {
+        await _store.write(
+          key: 'accessToken',
+          value: map['accessToken'].toString(),
+        );
+      }
+
+      final weatherRaw = map['weather'];
+      if (weatherRaw == null) {
+        throw Exception('Weather data missing from response.');
+      }
+
+      // Just return the weather map itself
+      return Map<String, dynamic>.from(weatherRaw as Map);
+    } on DioException catch (e) {
+      if (e.response != null) {
+        throw Exception(
+          'Server error: ${e.response?.statusCode} ${e.response?.data}',
+        );
+      } else {
+        throw Exception('Network error: ${e.message}');
+      }
+    } catch (e) {
+      throw Exception('Unexpected error: $e');
+    }
+  }
+
+
     // ===== UCF Garages / Parking =========================================
 
   /// Fetch all garages from the backend.
