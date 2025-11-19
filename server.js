@@ -4,13 +4,16 @@ const path = require('path');
 const { MongoClient } = require('mongodb');
 require('dotenv').config({ path: './priv.env' }); // your .env file
 require('dotenv').config({ path: './sendgrid.env' });
+const { updateWeathersCollection} = require('./weatherService1');
 
+const cookieParser = require("cookie-parser");
 
 const app = express();
 
 // Middleware
 app.use(cors());
 app.use(express.json());
+app.use(cookieParser());
 app.use((req, res, next) => {
     res.setHeader('Access-Control-Allow-Origin', '*');
     res.setHeader(
@@ -46,6 +49,13 @@ async function connectDB() {
         // Setup API routes
         const api = require('./api.js');
         api.setApp(app, client);
+
+        // Weather API
+        console.log('Starting weather update scheduler...');
+        await updateWeathersCollection(client);
+
+                setInterval(() => updateWeathersCollection(client), 2 * 60 * 1000);
+
 
         // Start server
         app.listen(5000, () => {
