@@ -79,19 +79,42 @@ function extractTime(value: any): string {
   const match = value.match(/(\d{1,2}:\d{2}(?::\d{2})?)/);
   if (!match) return "";
   const hhmm = match[1];
-  return hhmm.slice(0, 5); // HH:MM
+  return hhmm.slice(0, 5);
 }
 
 function fmt(val: string | number | null | undefined, fallback = "--") {
   return val === null || val === undefined || val === "" ? fallback : val;
 }
 
+const toNumber = (v: any): number | null => {
+  if (typeof v === "number") return v;
+  if (typeof v === "string" && v.trim()) {
+    const n = Number(v);
+    return Number.isFinite(n) ? n : null;
+  }
+  return null;
+};
+
+const conditionToEmoji = (condition: string | undefined) => {
+  if (!condition) return "❓";
+  const c = condition.toLowerCase();
+  if (c.includes("sunny") || c.includes("clear")) return "☀️";
+  if (c.includes("cloud")) return "☁️";
+  if (c.includes("rain")) return "🌧️";
+  if (c.includes("snow")) return "❄️";
+  if (c.includes("thunder")) return "⛈️";
+  if (c.includes("fog") || c.includes("mist")) return "🌫️";
+  return "🌡️";
+};
+
+const NASA_ENDPOINT = "/api/viewNasaPhoto";
+
 export default function DailySummaryPage() {
   const today = new Date();
   const todayKey = fmtDateKey(today);
 
   const [date, setDate] = useState("");
-  const [weather] = useState<Weather>({
+  const [weather, setWeather] = useState<Weather>({
     emoji: "",
     condition: "",
     high: null,
@@ -103,7 +126,7 @@ export default function DailySummaryPage() {
   const [tasks, setTasks] = useState<Task[]>([]);
   const [events, setEvents] = useState<EventItem[]>([]);
   const [reminders, setReminders] = useState<Reminder[]>([]);
-  const [nasaPhoto] = useState("");
+  const [nasaPhoto, setNasaPhoto] = useState("");
   const [isSmallScreen, setIsSmallScreen] = useState(false);
 
   useEffect(() => {
@@ -124,13 +147,82 @@ export default function DailySummaryPage() {
 
   useEffect(() => {
     const loadData = async () => {
+      // ---- Weather ----
+      try {
+        const res = await fetch("/api/viewWeather", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          credentials: "include",
+          body: JSON.stringify({}),
+        });
+
+        if (!res.ok) {
+          const text = await res.text();
+          console.error("viewWeather failed:", res.status, text);
+        } else {
+          const data = await res.json();
+          const w: any = (data && (data.weather || data)) || {};
+
+          const condition: string = w.forecast || w.condition || "";
+          const high = toNumber(w.high ?? w.temperature ?? w.current);
+          const low = toNumber(w.low ?? w.minTemp);
+
+          setWeather({
+            emoji: conditionToEmoji(condition),
+            condition,
+            high,
+            low,
+            sunrise: w.sunrise || "",
+            sunset: w.sunset || "",
+          });
+        }
+      } catch (err) {
+        console.error("Error loading weather for Daily Summary:", err);
+      }
+
+      // ---- NASA Photo of the Day ----
+      try {
+        const res = await fetch(NASA_ENDPOINT, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          credentials: "include",
+          body: JSON.stringify({}),
+        });
+
+        if (!res.ok) {
+          const text = await res.text();
+          console.error("viewNasaPhoto failed:", res.status, text);
+        } else {
+          const data = await res.json();
+          const anyData: any = data || {};
+          const photoObj =
+            anyData.photo ||
+            anyData.image ||
+            anyData.result ||
+            anyData;
+
+          const url =
+            photoObj.url ||
+            photoObj.imageUrl ||
+            photoObj.image ||
+            photoObj.hdurl ||
+            "";
+
+          if (typeof url === "string" && url.trim()) {
+            setNasaPhoto(url.trim());
+          }
+        }
+      } catch (err) {
+        console.error("Error loading NASA photo for Daily Summary:", err);
+      }
+
       // ---- Tasks ----
       try {
         const res = await fetch("/api/viewTask", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           credentials: "include",
-          body: JSON.stringify({ title: "" }), // blank => all
+          body: JSON.stringify({ title: "" }),
         });
 
         if (!res.ok) {
@@ -187,7 +279,7 @@ export default function DailySummaryPage() {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           credentials: "include",
-          body: JSON.stringify({ title: "" }), 
+          body: JSON.stringify({ title: "" }),
         });
 
         if (!res.ok) {
@@ -232,7 +324,7 @@ export default function DailySummaryPage() {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           credentials: "include",
-          body: JSON.stringify({ title: "" }), // blank => all
+          body: JSON.stringify({ title: "" }),
         });
 
         if (!res.ok) {
@@ -247,7 +339,6 @@ export default function DailySummaryPage() {
 
           const mapped: Reminder[] = raw
             .filter((r: any) => {
-              // keep non-completed reminders
               const status = (r.status || "").toLowerCase();
               return !["complete", "completed", "done"].includes(status);
             })

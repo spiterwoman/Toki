@@ -1,7 +1,15 @@
-import { useState, useEffect } from 'react';
-import { Sunrise, Sunset, Calendar, Droplets, Wind, Eye, Gauge } from 'lucide-react';
-import PageShell from '../components/PageShell';
-import GlassCard from '../components/GlassCard';
+import { useState, useEffect } from "react";
+import {
+  Sunrise,
+  Sunset,
+  Calendar,
+  Droplets,
+  Wind,
+  Eye,
+  Gauge,
+} from "lucide-react";
+import PageShell from "../components/PageShell";
+import GlassCard from "../components/GlassCard";
 
 type CurrentWeather = {
   location: string;
@@ -20,72 +28,102 @@ type CurrentWeather = {
 type Hourly = { time: string; emoji: string; temp: number | string };
 type Weekly = { day: string; emoji: string; high: number | string; low: number | string };
 
-export default function WeatherPage() {
 
+const formatValue = (
+  value: number | string | null | undefined,
+  placeholder = "--"
+) => (value !== null && value !== undefined && value !== "" ? value : placeholder);
+
+const toNumber = (v: any): number | null => {
+  if (typeof v === "number") return v;
+  if (typeof v === "string" && v.trim()) {
+    const n = Number(v);
+    return Number.isFinite(n) ? n : null;
+  }
+  return null;
+};
+
+const conditionToEmoji = (condition: string | undefined) => {
+  if (!condition) return "❓";
+  const c = condition.toLowerCase();
+  if (c.includes("sunny") || c.includes("clear")) return "☀️";
+  if (c.includes("cloud")) return "☁️";
+  if (c.includes("rain")) return "🌧️";
+  if (c.includes("snow")) return "❄️";
+  if (c.includes("thunder")) return "⛈️";
+  if (c.includes("fog") || c.includes("mist")) return "🌫️";
+  return "🌡️";
+};
+
+export default function WeatherPage() {
   const [weather, setWeather] = useState<CurrentWeather>({
-    location: '',
-    emoji: '',
-    condition: '',
+    location: "",
+    emoji: "",
+    condition: "",
     temperature: null,
     feelsLike: null,
     humidity: null,
     windSpeed: null,
     visibility: null,
     pressure: null,
-    sunrise: '',
-    sunset: '',
+    sunrise: "",
+    sunset: "",
   });
 
   const [hourlyForecast, setHourlyForecast] = useState<Hourly[]>([]);
   const [weeklyForecast, setWeeklyForecast] = useState<Weekly[]>([]);
 
-  const formatValue = (value: number | string | null | undefined, placeholder = '--') =>
-    value !== null && value !== undefined ? value : placeholder;
-
-  // Map condition to emoji
-  const conditionToEmoji = (condition: string | undefined) => {
-    if(!condition) return '❓';
-    const c = condition.toLowerCase();
-    if (c.includes('sunny') || c.includes('clear')) return '☀️';
-    if (c.includes('cloud')) return '☁️';
-    if (c.includes('rain')) return '🌧️';
-    if (c.includes('snow')) return '❄️';
-    if (c.includes('thunder')) return '⛈️';
-    if (c.includes('fog') || c.includes('mist')) return '🌫️';
-    return '🌡️';
-  }
-
   useEffect(() => {
     async function fetchWeather() {
       try {
-        const res = await fetch('/api/viewWeather', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
+        const res = await fetch("/api/viewWeather", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          credentials: "include", 
           body: JSON.stringify({}),
         });
 
-        const data = await res.json();
-        if (data.success) {
-          const w = data.weather;
-          setWeather({
-            location: w.location,
-            emoji: conditionToEmoji(w.forecast),
-            condition: w.forecast,
-            temperature: w.high,
-            feelsLike: null,
-            humidity: w.humid,
-            windSpeed: w.windSpeed,
-            visibility: w.vis,
-            pressure: w.pressure,
-            sunrise: w.sunrise,
-            sunset: w.sunset,
-          });
+        if (!res.ok) {
+          const text = await res.text();
+          console.error("viewWeather failed:", res.status, text);
+          return;
+        }
 
-          if (w.hourly) setHourlyForecast(w.hourly);
-          if (w.weekly) setWeeklyForecast(w.weekly);
+        const data = await res.json();
+        const w: any = (data && (data.weather || data)) || {};
+
+        const condition: string = w.forecast || w.condition || "";
+
+        const nextWeather: CurrentWeather = {
+          location: w.location || "",
+          emoji: conditionToEmoji(condition),
+          condition,
+          temperature:
+            toNumber(w.temperature ?? w.current ?? w.high) ?? weather.temperature,
+          feelsLike: toNumber(w.feelsLike ?? w.feels_like) ?? weather.feelsLike,
+          humidity: toNumber(w.humid ?? w.humidity) ?? weather.humidity,
+          windSpeed: toNumber(w.windSpeed ?? w.wind_speed) ?? weather.windSpeed,
+          visibility: toNumber(w.vis ?? w.visibility) ?? weather.visibility,
+          pressure: toNumber(w.pressure) ?? weather.pressure,
+          sunrise: w.sunrise || weather.sunrise,
+          sunset: w.sunset || weather.sunset,
+        };
+
+        setWeather(nextWeather);
+
+        if (Array.isArray(w.hourly)) {
+          setHourlyForecast(w.hourly as Hourly[]);
+        } else {
+          setHourlyForecast([]);
+        }
+
+        if (Array.isArray(w.weekly)) {
+          setWeeklyForecast(w.weekly as Weekly[]);
+        } else {
+          setWeeklyForecast([]);
         }
       } catch (err) {
-        console.error('Failed to fetch weather data:', err);
+        console.error("Failed to fetch weather data:", err);
       }
     }
 
@@ -105,7 +143,10 @@ export default function WeatherPage() {
         `}
       </style>
 
-      <PageShell title="Weather" subtitle={weather.location || 'Loading location...'}>
+      <PageShell
+        title="Weather"
+        subtitle={weather.location || "Loading location..."}
+      >
         <div className="vstack" style={{ gap: 24, paddingTop: 24 }}>
           <div className="vstack" style={{ gap: 24 }}>
             {/* CURRENT WEATHER */}
@@ -113,53 +154,57 @@ export default function WeatherPage() {
               <div
                 className="weather-grid"
                 style={{
-                  display: 'grid',
-                  gridTemplateColumns: '1fr 1fr',
+                  display: "grid",
+                  gridTemplateColumns: "1fr 1fr",
                   gap: 32,
-                  alignItems: 'center',
+                  alignItems: "center",
                 }}
               >
                 {/* Left column */}
-                <div style={{ textAlign: 'center' }}>
+                <div style={{ textAlign: "center" }}>
                   <div
                     style={{
-                      display: 'flex',
-                      justifyContent: 'center',
-                      alignItems: 'center',
+                      display: "flex",
+                      justifyContent: "center",
+                      alignItems: "center",
                       gap: 24,
                       marginBottom: 16,
-                      flexWrap: 'wrap',
+                      flexWrap: "wrap",
                     }}
                   >
-                    <div style={{ fontSize: '6rem' }}>{weather.emoji}</div>
+                    <div style={{ fontSize: "6rem" }}>{weather.emoji}</div>
                     <div>
-                      <div style={{ fontSize: '4rem', color: 'white' }}>
+                      <div style={{ fontSize: "4rem", color: "white" }}>
                         {formatValue(weather.temperature)}°
                       </div>
-                      <div style={{ color: 'rgba(255,255,255,0.6)' }}>
+                      <div style={{ color: "rgba(255,255,255,0.6)" }}>
                         Feels like {formatValue(weather.feelsLike)}°
                       </div>
                     </div>
                   </div>
 
-                  <div style={{ fontSize: '2rem', marginBottom: 8 }}>
-                    {weather.condition || 'Loading weather...'}
+                  <div style={{ fontSize: "2rem", marginBottom: 8 }}>
+                    {weather.condition || "Loading weather..."}
                   </div>
                   <div
                     style={{
-                      display: 'flex',
-                      justifyContent: 'center',
+                      display: "flex",
+                      justifyContent: "center",
                       gap: 16,
-                      color: 'rgba(255,255,255,0.6)',
+                      color: "rgba(255,255,255,0.6)",
                     }}
                   >
-                    <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                    <div
+                      style={{ display: "flex", alignItems: "center", gap: 6 }}
+                    >
                       <Sunrise size={16} />
-                      <span>{weather.sunrise || '--.--'}</span>
+                      <span>{weather.sunrise || "--.--"}</span>
                     </div>
-                    <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                    <div
+                      style={{ display: "flex", alignItems: "center", gap: 6 }}
+                    >
                       <Sunset size={16} />
-                      <span>{weather.sunset || '--.--'}</span>
+                      <span>{weather.sunset || "--.--"}</span>
                     </div>
                   </div>
                 </div>
@@ -167,53 +212,59 @@ export default function WeatherPage() {
                 {/* Right column (stats) */}
                 <div
                   style={{
-                    display: 'grid',
-                    gridTemplateColumns: '1fr 1fr',
+                    display: "grid",
+                    gridTemplateColumns: "1fr 1fr",
                     gap: 16,
                   }}
                 >
                   {[
                     {
-                      label: 'Humidity',
-                      value: `${formatValue(weather.humidity, '--')}%`,
+                      label: "Humidity",
+                      value: `${formatValue(weather.humidity, "--")}%`,
                       icon: <Droplets size={16} color="#60a5fa" />,
                     },
                     {
-                      label: 'Wind Speed',
-                      value: `${formatValue(weather.windSpeed, '--')} mph`,
+                      label: "Wind Speed",
+                      value: `${formatValue(weather.windSpeed, "--")} mph`,
                       icon: <Wind size={16} color="#34d399" />,
                     },
                     {
-                      label: 'Visibility',
-                      value: `${formatValue(weather.visibility, '--')} mi`,
+                      label: "Visibility",
+                      value: `${formatValue(weather.visibility, "--")} mi`,
                       icon: <Eye size={16} color="#a78bfa" />,
                     },
                     {
-                      label: 'Pressure',
-                      value: `${formatValue(weather.pressure, '--')} mb`,
+                      label: "Pressure",
+                      value: `${formatValue(weather.pressure, "--")} mb`,
                       icon: <Gauge size={16} color="#facc15" />,
                     },
                   ].map((item, i) => (
                     <div
                       key={i}
                       style={{
-                        background: 'rgba(255,255,255,0.05)',
+                        background: "rgba(255,255,255,0.05)",
                         borderRadius: 12,
                         padding: 16,
                       }}
                     >
                       <div
                         style={{
-                          display: 'flex',
-                          alignItems: 'center',
+                          display: "flex",
+                          alignItems: "center",
                           gap: 8,
                           marginBottom: 8,
                         }}
                       >
                         {item.icon}
-                        <span style={{ fontSize: 14, opacity: 0.8 }}>{item.label}</span>
+                        <span style={{ fontSize: 14, opacity: 0.8 }}>
+                          {item.label}
+                        </span>
                       </div>
-                      <div style={{ fontSize: '1.5rem', color: 'white' }}>{item.value}</div>
+                      <div
+                        style={{ fontSize: "1.5rem", color: "white" }}
+                      >
+                        {item.value}
+                      </div>
                     </div>
                   ))}
                 </div>
@@ -222,15 +273,22 @@ export default function WeatherPage() {
 
             {/* HOURLY FORECAST */}
             <GlassCard style={{ padding: 24, marginBottom: 24 }}>
-              <div style={{ fontWeight: 'bold' }}>Hourly Forecast</div>
+              <div style={{ fontWeight: "bold" }}>Hourly Forecast</div>
               {hourlyForecast.length === 0 ? (
-                <div style={{ marginTop: 16, color: 'rgba(255,255,255,0.6)' }}>Loading hourly forecast...</div>
+                <div
+                  style={{
+                    marginTop: 16,
+                    color: "rgba(255,255,255,0.6)",
+                  }}
+                >
+                  Loading hourly forecast...
+                </div>
               ) : (
                 <div
                   style={{
-                    display: 'flex',
+                    display: "flex",
                     gap: 16,
-                    overflowX: 'auto',
+                    overflowX: "auto",
                     paddingBottom: 8,
                     marginTop: 16,
                   }}
@@ -239,25 +297,40 @@ export default function WeatherPage() {
                     <div
                       key={i}
                       style={{
-                        background: 'rgba(255,255,255,0.05)',
+                        background: "rgba(255,255,255,0.05)",
                         borderRadius: 12,
                         padding: 16,
-                        textAlign: 'center',
+                        textAlign: "center",
                         minWidth: 100,
-                        transition: 'background 0.2s',
+                        transition: "background 0.2s",
                       }}
                       onMouseEnter={(e) =>
-                        (e.currentTarget.style.background = 'rgba(255,255,255,0.1)')
+                        (e.currentTarget.style.background =
+                          "rgba(255,255,255,0.1)")
                       }
                       onMouseLeave={(e) =>
-                        (e.currentTarget.style.background = 'rgba(255,255,255,0.05)')
+                        (e.currentTarget.style.background =
+                          "rgba(255,255,255,0.05)")
                       }
                     >
-                      <div style={{ color: 'rgba(255,255,255,0.6)', marginBottom: 8 }}>
+                      <div
+                        style={{
+                          color: "rgba(255,255,255,0.6)",
+                          marginBottom: 8,
+                        }}
+                      >
                         {hour.time}
                       </div>
-                      <div style={{ fontSize: '2rem', marginBottom: 8 }}>{hour.emoji}</div>
-                      <div style={{ fontSize: '1.25rem', color: 'white' }}>{hour.temp}°</div>
+                      <div
+                        style={{ fontSize: "2rem", marginBottom: 8 }}
+                      >
+                        {hour.emoji}
+                      </div>
+                      <div
+                        style={{ fontSize: "1.25rem", color: "white" }}
+                      >
+                        {hour.temp}°
+                      </div>
                     </div>
                   ))}
                 </div>
@@ -268,10 +341,10 @@ export default function WeatherPage() {
             <GlassCard style={{ padding: 24 }}>
               <div
                 style={{
-                  display: 'flex',
-                  alignItems: 'center',
+                  display: "flex",
+                  alignItems: "center",
                   gap: 8,
-                  fontWeight: 'bold',
+                  fontWeight: "bold",
                   marginBottom: 16,
                 }}
               >
@@ -280,40 +353,83 @@ export default function WeatherPage() {
               </div>
 
               {weeklyForecast.length === 0 ? (
-                <div style={{ color: 'rgba(255,255,255,0.6)' }}>Loading weekly forecast...</div>
+                <div
+                  style={{ color: "rgba(255,255,255,0.6)" }}
+                >
+                  Loading weekly forecast...
+                </div>
               ) : (
-                <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+                <div
+                  style={{
+                    display: "flex",
+                    flexDirection: "column",
+                    gap: 12,
+                  }}
+                >
                   {weeklyForecast.map((day, i) => (
                     <div
                       key={i}
                       style={{
-                        display: 'flex',
-                        justifyContent: 'space-between',
-                        alignItems: 'center',
-                        background: 'rgba(255,255,255,0.05)',
+                        display: "flex",
+                        justifyContent: "space-between",
+                        alignItems: "center",
+                        background: "rgba(255,255,255,0.05)",
                         borderRadius: 12,
                         padding: 16,
-                        transition: 'background 0.2s',
+                        transition: "background 0.2s",
                       }}
                       onMouseEnter={(e) =>
-                        (e.currentTarget.style.background = 'rgba(255,255,255,0.1)')
+                        (e.currentTarget.style.background =
+                          "rgba(255,255,255,0.1)")
                       }
                       onMouseLeave={(e) =>
-                        (e.currentTarget.style.background = 'rgba(255,255,255,0.05)')
+                        (e.currentTarget.style.background =
+                          "rgba(255,255,255,0.05)")
                       }
                     >
-                      <div style={{ display: 'flex', alignItems: 'center', gap: 16 }}>
+                      <div
+                        style={{
+                          display: "flex",
+                          alignItems: "center",
+                          gap: 16,
+                        }}
+                      >
                         <div style={{ width: 48 }}>{day.day}</div>
-                        <div style={{ fontSize: '1.5rem' }}>{day.emoji}</div>
-                      </div>
-                      <div style={{ display: 'flex', gap: 24 }}>
-                        <div style={{ display: 'flex', gap: 4 }}>
-                          <span style={{ color: 'rgba(255,255,255,0.6)', fontSize: 14 }}>High</span>
-                          <span style={{ color: 'white', fontSize: 16 }}>{day.high}°</span>
+                        <div style={{ fontSize: "1.5rem" }}>
+                          {day.emoji}
                         </div>
-                        <div style={{ display: 'flex', gap: 4 }}>
-                          <span style={{ color: 'rgba(255,255,255,0.6)', fontSize: 14 }}>Low</span>
-                          <span style={{ color: 'rgba(255,255,255,0.6)', fontSize: 16 }}>
+                      </div>
+                      <div style={{ display: "flex", gap: 24 }}>
+                        <div style={{ display: "flex", gap: 4 }}>
+                          <span
+                            style={{
+                              color: "rgba(255,255,255,0.6)",
+                              fontSize: 14,
+                            }}
+                          >
+                            High
+                          </span>
+                          <span
+                            style={{ color: "white", fontSize: 16 }}
+                          >
+                            {day.high}°
+                          </span>
+                        </div>
+                        <div style={{ display: "flex", gap: 4 }}>
+                          <span
+                            style={{
+                              color: "rgba(255,255,255,0.6)",
+                              fontSize: 14,
+                            }}
+                          >
+                            Low
+                          </span>
+                          <span
+                            style={{
+                              color: "rgba(255,255,255,0.6)",
+                              fontSize: 16,
+                            }}
+                          >
                             {day.low}°
                           </span>
                         </div>
