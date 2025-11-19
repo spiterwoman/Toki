@@ -4,6 +4,7 @@ const path = require('path');
 const { MongoClient } = require('mongodb');
 require('dotenv').config({ path: './priv.env' }); // your .env file
 require('dotenv').config({ path: './sendgrid.env' });
+const { startWeatherUpdateScheduler } = require('./services/weatherService');
 
 const cookieParser = require("cookie-parser");
 
@@ -48,6 +49,10 @@ async function connectDB() {
         // Setup API routes
         const api = require('./api.js');
         api.setApp(app, client);
+
+        // Weather API
+        console.log('🌤️  Starting weather update scheduler...');
+        startWeatherUpdateScheduler();
 
         // Start server
         app.listen(5000, () => {
